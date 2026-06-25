@@ -443,6 +443,39 @@ app.post('/api/schools/drivers', authenticateToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+app.put('/api/schools/drivers/:id', authenticateToken, async (req, res) => {
+  if (req.user.type !== 'school') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const { id } = req.params;
+    const { name, email, phone, licenseNumber } = req.body;
+
+    const driver = await Driver.findOneAndUpdate(
+      { _id: id, school_id: req.user.id },
+      {
+        name,
+        email,
+        phone,
+        license_number: licenseNumber
+      },
+      { new: true }
+    );
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Driver not found' });
+    }
+
+    res.json({
+      message: 'Driver updated successfully',
+      driver
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.delete('/api/schools/drivers/:id', authenticateToken, async (req, res) => {
   if (req.user.type !== 'school') return res.status(403).json({ error: 'Access denied' });
