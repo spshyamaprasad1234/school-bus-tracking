@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Marker, Polyline } from '@react-google-maps/api';
-import { Bus, MapPin, Navigation, LogOut, Play, Square, QrCode, Camera, UserCheck, Users, AlertTriangle, Clock, X, ChevronDown } from 'lucide-react';
+import { Bus, MapPin, Navigation, LogOut, Play, Square, QrCode, Camera, UserCheck, Users, AlertTriangle, Clock, X, ChevronDown, RotateCcw } from 'lucide-react';
 import { driverAPI } from '../api';
 import { clearAuth } from '../auth';
 import { useToast } from '../App';
 import { connectSocket, disconnectSocket, emitLocationUpdate, onTripEnded } from '../socket';
 import gsap from 'gsap';
+import QRScanner from '../components/QRScanner';
 
 const mapContainerStyle = { width: '100%', height: '300px' };
 const defaultCenter = { lat: 40.7128, lng: -74.0060 };
@@ -20,7 +21,10 @@ function DriverDashboard() {
   const [locationHistory, setLocationHistory] = useState([]);
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [manualQRInput, setManualQRInput] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const restartTimerRef = useRef(null);
   const [showDelayModal, setShowDelayModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [delayMinutes, setDelayMinutes] = useState(15);
@@ -185,22 +189,73 @@ function DriverDashboard() {
     }
   };
 
-  const handleScanQR = async () => {
-    if (!activeTrip || !manualQRInput.trim()) {
-      setScanResult({ error: 'Please enter the QR code' });
-      return;
-    }
+  const performScan = useCallback(async (qrCode) => {
+    if (!activeTrip || !qrCode) return;
+    setIsScanning(false);
     try {
-      const res = await driverAPI.scanQR({ tripId: activeTrip.id, qrCode: manualQRInput.trim() });
+      const res = await driverAPI.scanQR({ tripId: activeTrip.id, qrCode });
       setScanResult(res.data);
       setManualQRInput('');
       toast.success(`${res.data.student_name} checked in!`);
       loadData();
+      if (navigator.vibrate) navigator.vibrate(200);
+      restartTimerRef.current = setTimeout(() => {
+        setScanResult(null);
+        setShowManualInput(false);
+        setIsScanning(true);
+      }, 3000);
     } catch (err) {
-      setScanResult({ error: err.response?.data?.error || 'Scan failed' });
-      toast.error(err.response?.data?.error || 'Scan failed');
+      const errMsg = err.response?.data?.error || 'Scan failed';
+      setScanResult({ error: errMsg });
+      toast.error(errMsg);
+      restartTimerRef.current = setTimeout(() => {
+        setScanResult(null);
+        setIsScanning(true);
+      }, 3000);
+    }
+  }, [activeTrip, toast, loadData]);
+
+  const handleCameraScan = useCallback((decodedText) => {
+    performScan(decodedText);
+  }, [performScan]);
+
+  const handleCameraError = useCallback((errMsg) => {
+    toast.error(errMsg || 'Camera error');
+    setIsScanning(false);
+  }, [toast]);
+
+  const handleManualScan = async () => {
+    if (!activeTrip || !manualQRInput.trim()) {
+      setScanResult({ error: 'Please enter the QR code' });
+      return;
+    }
+    await performScan(manualQRInput.trim());
+  };
+
+  const handleStartScanner = () => {
+    setShowQRScanner(true);
+    setScanResult(null);
+    setShowManualInput(false);
+    setIsScanning(true);
+  };
+
+  const handleStopScanner = () => {
+    setShowQRScanner(false);
+    setScanResult(null);
+    setIsScanning(false);
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleNotifyDelay = async () => {
     if (!activeTrip) return;
@@ -269,8 +324,8 @@ function DriverDashboard() {
                 </button>
               ) : (
                   <>
-                  <button className="btn btn-primary" onClick={() => { setShowQRScanner(!showQRScanner); setScanResult(null); }}>
-                    <QrCode size={16} /> {showQRScanner ? 'Hide Scanner' : 'Scan QR'}
+                  <button className="btn btn-primary" onClick={handleStartScanner}>
+                    <QrCode size={16} /> Scan QR
                   </button>
                   <button className="btn btn-warning" onClick={() => setShowDelayModal(true)}>
                     <Clock size={16} /> Delay
@@ -294,23 +349,62 @@ function DriverDashboard() {
 
             {showQRScanner && activeTrip && (
               <div className="qr-scanner-card">
-                <h3><Camera size={20} /> QR Boarding Scanner</h3>
-                <div className="qr-input-row">
-                  <input
-                    type="text"
-                    placeholder="Paste or type QR code from parent's phone..."
-                    value={manualQRInput}
-                    onChange={(e) => { setManualQRInput(e.target.value); setScanResult(null); }}
+                {isScanning && !scanResult && (
+                  <QRScanner
+                    onScan={handleCameraScan}
+                    onClose={handleStopScanner}
+                    onError={handleCameraError}
                   />
-                  <button onClick={handleScanQR} className="btn btn-primary">Scan</button>
-                </div>
+                )}
+
+                {!isScanning && !scanResult && (
+                  <div className="qr-scanner-start">
+                    <Camera size={36} />
+                    <h4>Camera Scanner</h4>
+                    <p>Start the camera to scan student QR codes from parent phones.</p>
+                    <button className="btn btn-primary btn-lg" onClick={() => setIsScanning(true)}>
+                      <Camera size={18} /> Start Camera
+                    </button>
+                    <button className="btn btn-outline btn-sm" onClick={() => setShowManualInput(!showManualInput)} style={{ marginTop: 8 }}>
+                      {showManualInput ? 'Hide' : 'Type QR Code Manually'}
+                    </button>
+                  </div>
+                )}
+
+                {showManualInput && (
+                  <div className="qr-input-row" style={{ marginTop: 12 }}>
+                    <input
+                      type="text"
+                      placeholder="Paste or type QR code..."
+                      value={manualQRInput}
+                      onChange={(e) => { setManualQRInput(e.target.value); setScanResult(null); }}
+                    />
+                    <button onClick={handleManualScan} className="btn btn-primary">Scan</button>
+                  </div>
+                )}
+
                 {scanResult && (
-                  <div className={`scan-result-banner ${scanResult.error ? 'error' : 'success'}`}>
-                    {scanResult.error ? (
-                      <><X size={18} />{scanResult.error}</>
-                    ) : (
-                      <><UserCheck size={18} /><strong>{scanResult.student_name}</strong> picked up at {scanResult.pickup_location}</>
+                  <div className="qr-scanner-result">
+                    <div className={`scan-result-banner ${scanResult.error ? 'error' : 'success'}`}>
+                      {scanResult.error ? (
+                        <><X size={18} /><span>{scanResult.error}</span></>
+                      ) : (
+                        <><UserCheck size={18} /><div><strong>{scanResult.student_name}</strong><span className="scan-pickup">{scanResult.pickup_location}</span></div></>
+                      )}
+                    </div>
+                    {!scanResult.error && (
+                      <div className="scan-auto-restart">
+                        <RotateCcw size={14} /> Ready for next scan...
+                      </div>
                     )}
+                  </div>
+                )}
+
+                {!isScanning && !scanResult && !showManualInput && (
+                  <div className="qr-scanner-close-row">
+                    <button className="btn btn-danger btn-sm" onClick={handleStopScanner}>
+                      <X size={16} /> Close Scanner
+                    </button>
                   </div>
                 )}
               </div>

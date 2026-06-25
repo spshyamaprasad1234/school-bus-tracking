@@ -1433,6 +1433,200 @@ td .actions {
   border: 1px solid rgba(239, 68, 68, 0.15);
 }
 
+.scan-pickup {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.scan-auto-restart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--gray-400);
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* === QR CAMERA SCANNER === */
+.qr-camera-scanner {
+  width: 100%;
+}
+
+.qr-camera-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+
+.qr-camera-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--gray-400);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.qr-camera-close:hover {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.qr-camera-body {
+  position: relative;
+}
+
+.qr-camera-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 24px;
+  color: var(--gray-400);
+  font-size: 14px;
+}
+
+.qr-camera-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--gray-500);
+}
+
+.qr-camera-error h4 {
+  color: var(--gray-700);
+  font-size: 16px;
+  margin: 0;
+}
+
+.qr-camera-error p {
+  font-size: 13px;
+  max-width: 300px;
+  margin: 0;
+}
+
+.qr-camera-error .qr-camera-hint {
+  color: var(--gray-400);
+  font-size: 12px;
+}
+
+.qr-camera-view {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: #000;
+}
+
+#qr-reader-container {
+  width: 100%;
+  min-height: 280px;
+}
+
+#qr-reader-container video {
+  width: 100% !important;
+  display: block;
+}
+
+#qr-reader-container img {
+  display: none !important;
+}
+
+#qr-reader-container section {
+  display: none !important;
+}
+
+.qr-camera-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.qr-camera-frame {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin-bottom: 20px;
+}
+
+.qr-frame-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: var(--primary);
+  border-style: solid;
+}
+
+.qr-frame-corner.tl { top: 0; left: 0; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+.qr-frame-corner.tr { top: 0; right: 0; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+.qr-frame-corner.bl { bottom: 0; left: 0; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+.qr-frame-corner.br { bottom: 0; right: 0; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+
+.qr-camera-instruction {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 8px 18px;
+  border-radius: 20px;
+  backdrop-filter: blur(4px);
+}
+
+.qr-scanner-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 24px;
+  text-align: center;
+  color: var(--gray-400);
+}
+
+.qr-scanner-start h4 {
+  color: var(--gray-700);
+  font-size: 16px;
+  margin: 0;
+}
+
+.qr-scanner-start p {
+  font-size: 13px;
+  max-width: 300px;
+  margin: 0 0 4px;
+}
+
+.qr-scanner-result {
+  margin-top: 4px;
+}
+
+.qr-scanner-close-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
 /* === CHECK-INS === */
 .checkins-card {
   background: var(--white);

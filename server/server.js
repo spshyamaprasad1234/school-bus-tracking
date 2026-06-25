@@ -803,6 +803,13 @@ app.post('/api/trips/scan-qr', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'QR code does not match trip' });
     }
     
+    const alreadyCheckedIn = trip.check_ins?.some(
+      ci => ci.student_id?.toString() === studentId
+    );
+    if (alreadyCheckedIn) {
+      return res.status(400).json({ error: 'Student already checked in' });
+    }
+    
     const checkIn = {
       student_id: studentId,
       student_name: student.name,
