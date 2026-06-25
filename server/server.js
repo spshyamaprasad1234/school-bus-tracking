@@ -510,6 +510,41 @@ app.post('/api/schools/buses', authenticateToken, async (req, res) => {
   await bus.save();
   res.json({ message: 'Bus added successfully', busId: bus._id });
 });
+app.put('/api/schools/buses/:id', authenticateToken, async (req, res) => {
+  if (req.user.type !== 'school') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const { id } = req.params;
+    const { busNumber, licensePlate, model, capacity, driverId, routeId } = req.body;
+
+    const bus = await Bus.findOneAndUpdate(
+      { _id: id, school_id: req.user.id },
+      {
+        bus_number: busNumber,
+        license_plate: licensePlate,
+        model,
+        capacity,
+        driver_id: driverId || null,
+        route_id: routeId || null
+      },
+      { new: true }
+    );
+
+    if (!bus) {
+      return res.status(404).json({ error: 'Bus not found' });
+    }
+
+    res.json({
+      message: 'Bus updated successfully',
+      bus
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.delete('/api/schools/buses/:id', authenticateToken, async (req, res) => {
   if (req.user.type !== 'school') return res.status(403).json({ error: 'Access denied' });
@@ -532,6 +567,55 @@ app.post('/api/schools/routes', authenticateToken, async (req, res) => {
   });
   await route.save();
   res.json({ message: 'Route added successfully', routeId: route._id });
+});
+app.put('/api/schools/routes/:id', authenticateToken, async (req, res) => {
+  if (req.user.type !== 'school') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const { id } = req.params;
+    const { name, startLocation, endLocation, estimatedTime, stops } = req.body;
+
+    const route = await Route.findOneAndUpdate(
+      {
+        _id: id,
+        school_id: req.user.id
+      },
+      {
+        name,
+        start_location: startLocation,
+        end_location: endLocation,
+        estimated_time: estimatedTime,
+        stops: stops || []
+      },
+      { new: true }
+    );
+
+    if (!route) {
+      return res.status(404).json({ error: 'Route not found' });
+    }
+
+    res.json({
+      message: 'Route updated successfully',
+      route
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+app.delete('/api/schools/routes/:id', authenticateToken, async (req, res) => {
+  if (req.user.type !== 'school') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  await Route.findOneAndDelete({
+    _id: req.params.id,
+    school_id: req.user.id
+  });
+
+  res.json({ message: 'Route deleted successfully' });
 });
 
 app.get('/api/schools/students', authenticateToken, async (req, res) => {
@@ -559,6 +643,40 @@ app.post('/api/schools/students', authenticateToken, async (req, res) => {
   });
   await student.save();
   res.json({ message: 'Student added successfully', studentId: student._id, qrCode });
+});
+app.put('/api/schools/students/:id', authenticateToken, async (req, res) => {
+  if (req.user.type !== 'school') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const { id } = req.params;
+    const { name, parentPhone, pickupLocation, routeId, stopId } = req.body;
+
+    const student = await Student.findOneAndUpdate(
+      { _id: id, school_id: req.user.id },
+      {
+        name,
+        parent_phone: parentPhone,
+        pickup_location: pickupLocation,
+        route_id: routeId || null,
+        stop_id: stopId || null
+      },
+      { new: true }
+    );
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    res.json({
+      message: 'Student updated successfully',
+      student
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get('/api/driver/bus-info', authenticateToken, async (req, res) => {
