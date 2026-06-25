@@ -6,7 +6,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const { Server } = require('socket.io');
-const { OAuth2Client } = require('google-auth-library');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
@@ -290,53 +289,7 @@ async function checkProximityAndNotify(lat, lng, routeId, tripId) {
   }
 }
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-app.post('/api/auth/google', async (req, res) => {
-  try {
-    const { credential, role } = req.body;
-    if (!credential) return res.status(400).json({ error: 'Google credential is required' });
-
-    const ticket = await googleClient.verifyIdToken({
-      idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID
-    });
-    const payload = ticket.getPayload();
-    const { email, name, sub: googleId } = payload;
-
-    if (!email) return res.status(400).json({ error: 'Google account has no email' });
-
-    if (role === 'school') {
-      const school = await School.findOne({ email });
-      if (!school) return res.status(404).json({ error: 'No school account found with this email. Please sign up first.' });
-
-      const token = jwt.sign({ id: school._id, type: 'school' }, JWT_SECRET, { expiresIn: '24h' });
-      return res.json({ token, school: { id: school._id, name: school.name, email: school.email, schoolCode: school.school_code } });
-    }
-
-    if (role === 'driver') {
-      const driver = await Driver.findOne({ email });
-      if (!driver) return res.status(404).json({ error: 'No driver account found with this email.' });
-
-      const school = await School.findById(driver.school_id);
-      const token = jwt.sign({ id: driver._id, type: 'driver', schoolId: driver.school_id }, JWT_SECRET, { expiresIn: '24h' });
-      return res.json({
-        token,
-        driver: {
-          id: driver._id, name: driver.name, email: driver.email,
-          schoolId: driver.school_id,
-          schoolName: school?.name || 'Unknown',
-          schoolCode: school?.school_code || 'UNKNOWN'
-        }
-      });
-    }
-
-    return res.status(400).json({ error: 'Invalid role' });
-  } catch (error) {
-    console.error('Google auth error:', error);
-    res.status(401).json({ error: 'Google authentication failed' });
-  }
-});
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -373,43 +326,6 @@ app.post('/api/schools/signup', async (req, res) => {
   }
 });
 
-app.post('/api/auth/google/signup', async (req, res) => {
-  try {
-    const { credential, address, phone } = req.body;
-    if (!credential) return res.status(400).json({ error: 'Google credential is required' });
-
-    const ticket = await googleClient.verifyIdToken({
-      idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID
-    });
-    const payload = ticket.getPayload();
-    const { email, name } = payload;
-
-    if (!email) return res.status(400).json({ error: 'Google account has no email' });
-
-    const existingSchool = await School.findOne({ email });
-    if (existingSchool) {
-      return res.status(400).json({ error: 'A school with this email already exists. Please login.' });
-    }
-
-    const schoolCode = generateSchoolCode();
-    const school = new School({
-      name: name || 'School',
-      email,
-      password: null,
-      school_code: schoolCode,
-      address: address || '',
-      phone: phone || ''
-    });
-    await school.save();
-
-    res.json({ message: 'School registered successfully', schoolCode, schoolId: school._id, name: school.name });
-  } catch (error) {
-    console.error('Google signup error:', error);
-    res.status(401).json({ error: 'Google signup failed' });
-  }
-});
-
 app.post('/api/schools/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -418,7 +334,7 @@ app.post('/api/schools/login', async (req, res) => {
     if (!school) return res.status(400).json({ error: 'Invalid credentials' });
     
     if (!school.password) {
-      return res.status(400).json({ error: 'This account uses Google login. Please sign in with Google.' });
+      return res.status(400).json({ error: 'This account has no password set. Please contact support.' });
     }
     
     const validPassword = await bcrypt.compare(password, school.password);
@@ -439,7 +355,7 @@ app.post('/api/drivers/login', async (req, res) => {
     if (!driver) return res.status(400).json({ error: 'Invalid credentials' });
     
     if (!driver.password) {
-      return res.status(400).json({ error: 'This account uses Google login. Please sign in with Google.' });
+      return res.status(400).json({ error: 'This account has no password set. Please contact support.' });
     }
     
     const validPassword = await bcrypt.compare(password, driver.password);

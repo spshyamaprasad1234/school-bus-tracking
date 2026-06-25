@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef, createContext, useContext, useCallback, createPortal } from 'react';
-import { GoogleOAuthProvider } from '@react-oauth/google';
 import gsap from 'gsap';
 import Login from './pages/Login';
 import SchoolSignup from './pages/SchoolSignup';
@@ -158,18 +157,14 @@ function AnimatedRoutes() {
   );
 }
 
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-
 function App() {
   return (
     <BrowserRouter>
-      <GoogleOAuthProvider clientId={googleClientId}>
-        <ModalPortalProvider>
-          <ToastProvider>
-            <AnimatedRoutes />
-          </ToastProvider>
-        </ModalPortalProvider>
-      </GoogleOAuthProvider>
+      <ModalPortalProvider>
+        <ToastProvider>
+          <AnimatedRoutes />
+        </ToastProvider>
+      </ModalPortalProvider>
     </BrowserRouter>
   );
 }

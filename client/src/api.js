@@ -40,11 +40,6 @@ export const schoolAPI = {
   deleteStudent: (id) => api.delete(`/schools/students/${id}`)
 };
 
-export const authAPI = {
-  googleLogin: (data) => api.post('/auth/google', data),
-  googleSignup: (data) => api.post('/auth/google/signup', data),
-};
-
 export const driverAPI = {
   login: (data) => api.post('/drivers/login', data),
   getBusInfo: () => api.get('/driver/bus-info'),
