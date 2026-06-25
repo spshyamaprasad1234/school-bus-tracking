@@ -435,7 +435,7 @@
               Back
             </button>
           </div>
-          <div className="nav-section nav-center"><h2>Students</h2></div>
+          <div className="nav-section nav-center"><h2>Buses</h2></div>
           <div className="nav-section nav-right"></div>
         </nav>
         <div className="content">
@@ -627,7 +627,7 @@
               Back
             </button>
           </div>
-          <div className="nav-section nav-center"><h2>Buses</h2></div>
+          <div className="nav-section nav-center"><h2>Routes</h2></div>
           <div className="nav-section nav-right"></div>
         </nav>
         <div className="content">
@@ -805,7 +805,10 @@
         toast.success('Student deleted');
         setDeleteConfirm(null);
         loadData();
-      } catch { toast.error('Failed to delete student'); }
+      } catch (err) {
+        console.error('Delete student error:', err.response?.data || err.message);
+        toast.error(err.response?.data?.error || 'Failed to delete student');
+      }
     };
 
     const selectedRoute = routes.find(r => r._id === formData.routeId);
@@ -825,7 +828,7 @@
               Back
             </button>
           </div>
-          <div className="nav-section nav-center"><h2>Routes</h2></div>
+          <div className="nav-section nav-center"><h2>Students</h2></div>
           <div className="nav-section nav-right"></div>
         </nav>
         <div className="content">
