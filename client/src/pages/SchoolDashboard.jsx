@@ -775,7 +775,7 @@
 
     const openEdit = (student) => {
       setEditingStudent(student);
-      setFormData({ name: student.name, parentPhone: student.parent_phone, pickupLocation: student.pickup_location || '', routeId: student.route_id || '', stopId: student.stop_id?.toString() || '' });
+      setFormData({ name: student.name, parentPhone: student.parent_phone, pickupLocation: student.pickup_location || '', routeId: student.route_id?._id || student.route_id || '', stopId: student.stop_id?.toString() || '' });
       setShowForm(true);
     };
 
