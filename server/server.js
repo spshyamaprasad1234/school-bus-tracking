@@ -444,9 +444,15 @@ app.post('/api/schools/drivers', authenticateToken, async (req, res) => {
   }
 });
 app.put('/api/schools/drivers/:id', authenticateToken, async (req, res) => {
+
+  console.log('UPDATE DRIVER API HIT');
+  console.log('Driver ID:', req.params.id);
+  console.log('Body:', req.body);
+
   if (req.user.type !== 'school') {
     return res.status(403).json({ error: 'Access denied' });
   }
+
 
   try {
     const { id } = req.params;
