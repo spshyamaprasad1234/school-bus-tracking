@@ -146,7 +146,7 @@ const studentSchema = new mongoose.Schema({
   parent_phone: String,
   pickup_location: String,
   route_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Route' },
-  stop_id: { type: mongoose.Schema.Types.ObjectId },
+  stop_id: Number,
   qr_code: String,
   created_at: { type: Date, default: Date.now }
 });

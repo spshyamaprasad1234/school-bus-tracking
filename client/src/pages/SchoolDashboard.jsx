@@ -793,6 +793,7 @@
         setShowForm(false);
         loadData();
       } catch (err) {
+        console.error('Save student error:', err.response?.data || err.message);
         toast.error(err.response?.data?.error || 'Failed to save student');
       } finally {
         setLoading(false);
