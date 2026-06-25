@@ -1,0 +1,16 @@
+{
+  "name": "school-bus-tracking",
+  "version": "1.0.0",
+  "description": "Smart School Bus Tracking & Safety System - MERN Stack",
+  "scripts": {
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "dev": "npm run server & npm run client",
+    "install-all": "cd server && npm install && cd ../client && npm install",
+    "build": "cd client && npm run build"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "license": "MIT"
+}
