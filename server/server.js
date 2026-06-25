@@ -679,6 +679,28 @@ app.put('/api/schools/students/:id', authenticateToken, async (req, res) => {
   }
 });
 
+app.delete('/api/schools/students/:id', authenticateToken, async (req, res) => {
+  if (req.user.type !== 'school') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  try {
+    const student = await Student.findOneAndDelete({
+      _id: req.params.id,
+      school_id: req.user.id
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    res.json({ message: 'Student deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/driver/bus-info', authenticateToken, async (req, res) => {
   if (req.user.type !== 'driver') return res.status(403).json({ error: 'Access denied' });
   const bus = await Bus.findOne({ driver_id: req.user.id });
