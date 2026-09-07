@@ -1,6 +1,24 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL + '/api';
+function getBaseApiUrl() {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    const trimmed = envUrl.trim().replace(/\/+$/, '');
+    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+  }
+  
+  if (import.meta.env.DEV) {
+    return 'http://localhost:5000/api';
+  }
+
+  console.warn(
+    '[Configuration Warning] VITE_API_URL is not configured in production. Defaulting API base to "/api". ' +
+    'Please set VITE_API_URL in your deployment environment settings.'
+  );
+  return '/api';
+}
+
+const API_URL = getBaseApiUrl();
 
 const api = axios.create({
   baseURL: API_URL,

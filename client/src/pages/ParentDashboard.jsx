@@ -1,23 +1,26 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
-import { MapPin, Bus, LogOut, Clock, QrCode, RefreshCw, Bell, X, Check, AlertTriangle } from 'lucide-react';
+import { MapPin, LogOut, Clock, QrCode, Bell, X, Check, AlertTriangle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { parentAPI } from '../api';
 import { clearAuth } from '../auth';
 import { useToast } from '../App';
-import { connectSocket, onTripLocationUpdate, onTripEnded, joinTripRoom } from '../socket';
+import { connectSocket, onTripLocationUpdate, onTripEnded, joinTripRoom, onNewNotification } from '../socket';
 import gsap from 'gsap';
 
 const mapContainerStyle = { width: '100%', height: '300px' };
-const defaultCenter = { lat: 40.7128, lng: -74.0060 };
 const mapOptions = { disableDefaultUI: false, zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: true };
 
 function ParentDashboard() {
   const [tripStatus, setTripStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentLocation, setCurrentLocation] = useState(null);
-  const [countdown, setCountdown] = useState(10);
+  const [countdown, setCountdown] = useState(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const rem = 10 - (now % 10);
+    return rem === 0 ? 10 : rem;
+  });
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -30,10 +33,59 @@ function ParentDashboard() {
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
   });
 
+  const loadData = useCallback(async () => {
+    try {
+      const res = await parentAPI.getTripStatus();
+      setTripStatus(res.data);
+      if (res.data?._id) {
+        joinTripRoom(res.data._id);
+      }
+      if (res.data?.current_lat && res.data?.current_lng) {
+        setCurrentLocation(prev => prev || { lat: res.data.current_lat, lng: res.data.current_lng });
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const res = await parentAPI.getNotifications();
+      setNotifications(res.data || []);
+      setUnreadCount((res.data || []).filter(n => !n.read).length);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     connectSocket();
-    loadData();
-    loadNotifications();
+    let isMounted = true;
+
+    const initialize = async () => {
+      try {
+        const [tripRes, notifRes] = await Promise.all([
+          parentAPI.getTripStatus(),
+          parentAPI.getNotifications()
+        ]);
+        if (!isMounted) return;
+        setTripStatus(tripRes.data);
+        if (tripRes.data?._id) {
+          joinTripRoom(tripRes.data._id);
+        }
+        if (tripRes.data?.current_lat && tripRes.data?.current_lng) {
+          setCurrentLocation(prev => prev || { lat: tripRes.data.current_lat, lng: tripRes.data.current_lng });
+        }
+        setNotifications(notifRes.data || []);
+        setUnreadCount((notifRes.data || []).filter(n => !n.read).length);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    initialize();
 
     const notifInterval = setInterval(loadNotifications, 10000);
 
@@ -46,18 +98,56 @@ function ParentDashboard() {
       setCurrentLocation(null);
     });
 
+    const unsubNotif = onNewNotification((newNotif) => {
+      if (newNotif) {
+        setNotifications(prev => [newNotif, ...prev.filter(n => n._id !== newNotif._id)]);
+        setUnreadCount(prev => prev + 1);
+        if (newNotif.message) {
+          toast.info(newNotif.message);
+        }
+      }
+    });
+
     return () => {
       clearInterval(notifInterval);
       unsubLocation();
       unsubEnded();
+      unsubNotif();
     };
-  }, []);
+  }, [loadData, loadNotifications, toast]);
 
   useEffect(() => {
-    const ci = setInterval(() => {
-      setCountdown(prev => prev <= 1 ? 10 : prev - 1);
+    let mounted = true;
+
+    const getSecondsRemaining = () => {
+      const now = Math.floor(Date.now() / 1000);
+      const remaining = 10 - (now % 10);
+      return remaining === 0 ? 10 : remaining;
+    };
+
+    const qrInterval = setInterval(async () => {
+      const remaining = getSecondsRemaining();
+      setCountdown(remaining);
+
+      if (remaining === 10) {
+        try {
+          const res = await parentAPI.getTripStatus();
+          if (mounted && res.data) {
+            setTripStatus(res.data);
+            if (res.data?._id) {
+              joinTripRoom(res.data._id);
+            }
+          }
+        } catch (err) {
+          console.error('QR auto-refresh error:', err);
+        }
+      }
     }, 1000);
-    return () => clearInterval(ci);
+
+    return () => {
+      mounted = false;
+      clearInterval(qrInterval);
+    };
   }, []);
 
   useEffect(() => {
@@ -66,32 +156,6 @@ function ParentDashboard() {
       { opacity: 1, duration: 0.4, ease: 'power2.out' }
     );
   }, []);
-
-  const loadData = async () => {
-    try {
-      const res = await parentAPI.getTripStatus();
-      setTripStatus(res.data);
-      if (res.data?._id) {
-        joinTripRoom(res.data._id);
-      }
-      if (res.data?.current_lat && res.data?.current_lng) {
-        setCurrentLocation({ lat: res.data.current_lat, lng: res.data.current_lng });
-      }
-      setCountdown(10);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadNotifications = async () => {
-    try {
-      const res = await parentAPI.getNotifications();
-      setNotifications(res.data || []);
-      setUnreadCount((res.data || []).filter(n => !n.read).length);
-    } catch { /* ignore */ }
-  };
 
   const markAsRead = async (id) => {
     try {

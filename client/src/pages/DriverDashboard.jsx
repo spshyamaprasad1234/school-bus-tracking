@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleMap, useJsApiLoader, Marker, Polyline } from '@react-google-maps/api';
-import { Bus, MapPin, Navigation, LogOut, Play, Square, QrCode, Camera, UserCheck, Users, AlertTriangle, Clock, X, ChevronDown, RotateCcw } from 'lucide-react';
+import { MapPin, LogOut, Play, Square, QrCode, Camera, UserCheck, Users, AlertTriangle, Clock, X, RotateCcw } from 'lucide-react';
 import { driverAPI } from '../api';
 import { clearAuth } from '../auth';
 import { useToast } from '../App';
-import { connectSocket, disconnectSocket, emitLocationUpdate, onTripEnded } from '../socket';
+import { connectSocket, emitLocationUpdate, onTripEnded } from '../socket';
 import gsap from 'gsap';
 import QRScanner from '../components/QRScanner';
 
@@ -30,7 +30,6 @@ function DriverDashboard() {
   const [delayMinutes, setDelayMinutes] = useState(15);
   const [delayReason, setDelayReason] = useState('');
   const [timer, setTimer] = useState(0);
-  const [loadError, setLoadError] = useState(null);
   const navigate = useNavigate();
   const toast = useToast();
   const contentRef = useRef(null);
@@ -38,14 +37,60 @@ function DriverDashboard() {
   const watcherRef = useRef(null);
   const lastEmitRef = useRef(0);
   const activeTripRef = useRef(null);
+  const isProcessingRef = useRef(false);
 
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
   });
 
+  const loadData = useCallback(async () => {
+    try {
+      const [busRes, tripRes] = await Promise.all([
+        driverAPI.getBusInfo(),
+        driverAPI.getTripDetails()
+      ]);
+      setBusInfo(busRes.data || {});
+      setTripDetails(tripRes.data);
+      if (tripRes.data?._id) {
+        setActiveTrip({ id: tripRes.data._id, startTime: tripRes.data.started_at });
+      }
+      if (tripRes.data?.current_lat && tripRes.data?.current_lng) {
+        const newLoc = { lat: tripRes.data.current_lat, lng: tripRes.data.current_lng };
+        setCurrentLocation(newLoc);
+        setLocationHistory(prev => [...prev.slice(-50), newLoc]);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   useEffect(() => {
-    const socket = connectSocket();
-    loadData();
+    connectSocket();
+    let isMounted = true;
+
+    const initialize = async () => {
+      try {
+        const [busRes, tripRes] = await Promise.all([
+          driverAPI.getBusInfo(),
+          driverAPI.getTripDetails()
+        ]);
+        if (!isMounted) return;
+        setBusInfo(busRes.data || {});
+        setTripDetails(tripRes.data);
+        if (tripRes.data?._id) {
+          setActiveTrip({ id: tripRes.data._id, startTime: tripRes.data.started_at });
+        }
+        if (tripRes.data?.current_lat && tripRes.data?.current_lng) {
+          const newLoc = { lat: tripRes.data.current_lat, lng: tripRes.data.current_lng };
+          setCurrentLocation(newLoc);
+          setLocationHistory(prev => [...prev.slice(-50), newLoc]);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    initialize();
     const dataInterval = setInterval(loadData, 5000);
 
     const unsubEnded = onTripEnded((data) => {
@@ -59,6 +104,7 @@ function DriverDashboard() {
     });
 
     return () => {
+      isMounted = false;
       clearInterval(dataInterval);
       clearInterval(timerRef.current);
       unsubEnded();
@@ -67,7 +113,7 @@ function DriverDashboard() {
         watcherRef.current = null;
       }
     };
-  }, []);
+  }, [loadData, toast]);
 
   useEffect(() => {
     gsap.fromTo(contentRef.current,
@@ -85,7 +131,6 @@ function DriverDashboard() {
         watcherRef.current = null;
       }
       clearInterval(timerRef.current);
-      setTimer(0);
       return;
     }
 
@@ -126,31 +171,15 @@ function DriverDashboard() {
       }
       clearInterval(timerRef.current);
     };
-  }, [activeTrip]);
-
-  const loadData = async () => {
-    try {
-      const [busRes, tripRes] = await Promise.all([
-        driverAPI.getBusInfo(),
-        driverAPI.getTripDetails()
-      ]);
-      setBusInfo(busRes.data || {});
-      setTripDetails(tripRes.data);
-      if (tripRes.data?._id) {
-        setActiveTrip({ id: tripRes.data._id, startTime: tripRes.data.started_at });
-      }
-      if (tripRes.data?.current_lat && tripRes.data?.current_lng) {
-        const newLoc = { lat: tripRes.data.current_lat, lng: tripRes.data.current_lng };
-        setCurrentLocation(newLoc);
-        setLocationHistory(prev => [...prev.slice(-50), newLoc]);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  }, [activeTrip, toast]);
 
   const handleStartTrip = async () => {
-    const { bus_id, route_id } = busInfo;
+    const busId = busInfo._id || busInfo.bus_id;
+    const routeId = busInfo.route_id?._id || busInfo.route_id;
+    if (!busId) {
+      toast.error('No bus assigned. Please contact school administration.');
+      return;
+    }
     try {
       const pos = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -158,7 +187,7 @@ function DriverDashboard() {
         });
       });
       const { latitude: lat, longitude: lng } = pos.coords;
-      const res = await driverAPI.startTrip({ busId: bus_id, routeId: route_id, lat, lng });
+      const res = await driverAPI.startTrip({ busId, routeId, lat, lng });
       setActiveTrip({ id: res.data.tripId });
       setCurrentLocation({ lat, lng });
       setLocationHistory([{ lat, lng }]);
@@ -190,7 +219,8 @@ function DriverDashboard() {
   };
 
   const performScan = useCallback(async (qrCode) => {
-    if (!activeTrip || !qrCode) return;
+    if (!activeTrip || !qrCode || isProcessingRef.current) return;
+    isProcessingRef.current = true;
     setIsScanning(false);
     try {
       const res = await driverAPI.scanQR({ tripId: activeTrip.id, qrCode });
@@ -202,6 +232,7 @@ function DriverDashboard() {
       restartTimerRef.current = setTimeout(() => {
         setScanResult(null);
         setShowManualInput(false);
+        isProcessingRef.current = false;
         setIsScanning(true);
       }, 3000);
     } catch (err) {
@@ -210,6 +241,7 @@ function DriverDashboard() {
       toast.error(errMsg);
       restartTimerRef.current = setTimeout(() => {
         setScanResult(null);
+        isProcessingRef.current = false;
         setIsScanning(true);
       }, 3000);
     }
@@ -222,6 +254,7 @@ function DriverDashboard() {
   const handleCameraError = useCallback((errMsg) => {
     toast.error(errMsg || 'Camera error');
     setIsScanning(false);
+    isProcessingRef.current = false;
   }, [toast]);
 
   const handleManualScan = async () => {
@@ -236,6 +269,7 @@ function DriverDashboard() {
     setShowQRScanner(true);
     setScanResult(null);
     setShowManualInput(false);
+    isProcessingRef.current = false;
     setIsScanning(true);
   };
 
@@ -243,6 +277,7 @@ function DriverDashboard() {
     setShowQRScanner(false);
     setScanResult(null);
     setIsScanning(false);
+    isProcessingRef.current = false;
     if (restartTimerRef.current) {
       clearTimeout(restartTimerRef.current);
       restartTimerRef.current = null;

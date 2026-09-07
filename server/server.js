@@ -41,13 +41,30 @@ io.on('connection', (socket) => {
   }
 
   socket.on('driver:location-update', async (data) => {
-    if (socket.user.type !== 'driver') return;
+    if (socket.user.type !== 'driver' || !data) return;
     const { tripId, lat, lng, speed, heading } = data;
+    if (!tripId || typeof lat !== 'number' || typeof lng !== 'number') return;
     
-    await Trip.findByIdAndUpdate(tripId, { current_lat: lat, current_lng: lng, current_speed: speed || 0 });
+    // Ensure driver socket is in the trip room
+    if (!socket.rooms.has(`trip:${tripId}`)) {
+      socket.join(`trip:${tripId}`);
+    }
+
+    const trip = await Trip.findByIdAndUpdate(
+      tripId, 
+      { current_lat: lat, current_lng: lng, current_speed: speed || 0 },
+      { new: true }
+    );
     
+    if (!trip) return;
+
+    const busId = socket.user.busId || trip.bus_id;
+    if (!socket.user.busId && busId) {
+      socket.user.busId = busId;
+    }
+
     await Location.create({
-      bus_id: socket.user.busId,
+      bus_id: busId,
       trip_id: tripId,
       latitude: lat,
       longitude: lng,
@@ -56,8 +73,7 @@ io.on('connection', (socket) => {
       recorded_at: new Date()
     });
 
-    const trip = await Trip.findById(tripId);
-    if (trip && trip.route_id) {
+    if (trip.route_id) {
       checkProximityAndNotify(lat, lng, trip.route_id, tripId);
     }
 
@@ -232,25 +248,29 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
 
 async function checkProximityAndNotify(lat, lng, routeId, tripId) {
   const route = await Route.findById(routeId);
-  if (!route || !route.stops) return;
+  if (!route || !route.stops || route.stops.length === 0) return;
 
   const students = await Student.find({ route_id: routeId });
-  
+  if (!students || students.length === 0) return;
+
   for (const stop of route.stops) {
-    if (stop.latitude && stop.longitude) {
+    if (typeof stop.latitude === 'number' && typeof stop.longitude === 'number') {
       const distance = calculateDistance(lat, lng, stop.latitude, stop.longitude);
       
+      const targetStudents = students.filter(s => !s.stop_id || s.stop_id === stop.order);
+
       if (distance < 0.5) {
-        for (const student of students) {
+        for (const student of targetStudents) {
           const existingApproaching = await Notification.findOne({
             student_id: student._id,
             trip_id: tripId,
             type: 'approaching',
+            message: `Bus is approaching ${stop.name}`,
             created_at: { $gte: new Date(Date.now() - 10 * 60 * 1000) }
           });
           
           if (!existingApproaching) {
-            await Notification.create({
+            const notif = await Notification.create({
               student_id: student._id,
               parent_phone: student.parent_phone,
               trip_id: tripId,
@@ -259,21 +279,23 @@ async function checkProximityAndNotify(lat, lng, routeId, tripId) {
               latitude: lat,
               longitude: lng
             });
+            io.to(`trip:${tripId}`).emit('notification:new', notif);
           }
         }
       }
       
       if (distance < 0.1) {
-        for (const student of students) {
+        for (const student of targetStudents) {
           const existingArrived = await Notification.findOne({
             student_id: student._id,
             trip_id: tripId,
             type: 'arrived',
+            message: `Bus has arrived at ${stop.name}`,
             created_at: { $gte: new Date(Date.now() - 10 * 60 * 1000) }
           });
           
           if (!existingArrived) {
-            await Notification.create({
+            const notif = await Notification.create({
               student_id: student._id,
               parent_phone: student.parent_phone,
               trip_id: tripId,
@@ -282,6 +304,7 @@ async function checkProximityAndNotify(lat, lng, routeId, tripId) {
               latitude: lat,
               longitude: lng
             });
+            io.to(`trip:${tripId}`).emit('notification:new', notif);
           }
         }
       }
@@ -485,7 +508,14 @@ app.put('/api/schools/drivers/:id', authenticateToken, async (req, res) => {
 
 app.delete('/api/schools/drivers/:id', authenticateToken, async (req, res) => {
   if (req.user.type !== 'school') return res.status(403).json({ error: 'Access denied' });
-  await Driver.findOneAndDelete({ _id: req.params.id, school_id: req.user.id });
+  const driver = await Driver.findOneAndDelete({ _id: req.params.id, school_id: req.user.id });
+  if (driver) {
+    // Unassign driver from any assigned buses
+    await Bus.updateMany(
+      { school_id: req.user.id, driver_id: req.params.id },
+      { $set: { driver_id: null } }
+    );
+  }
   res.json({ message: 'Driver deleted successfully' });
 });
 
@@ -610,10 +640,23 @@ app.delete('/api/schools/routes/:id', authenticateToken, async (req, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  await Route.findOneAndDelete({
+  const route = await Route.findOneAndDelete({
     _id: req.params.id,
     school_id: req.user.id
   });
+
+  if (route) {
+    // Unassign route from buses
+    await Bus.updateMany(
+      { school_id: req.user.id, route_id: req.params.id },
+      { $set: { route_id: null } }
+    );
+    // Unassign route and stop from students
+    await Student.updateMany(
+      { school_id: req.user.id, route_id: req.params.id },
+      { $set: { route_id: null, stop_id: null } }
+    );
+  }
 
   res.json({ message: 'Route deleted successfully' });
 });
@@ -706,7 +749,14 @@ app.get('/api/driver/bus-info', authenticateToken, async (req, res) => {
   const bus = await Bus.findOne({ driver_id: req.user.id });
   if (!bus) return res.json({});
   const route = await Route.findById(bus.route_id) || {};
-  res.json({ ...bus.toObject(), route_name: route.name, start_location: route.start_location, end_location: route.end_location, estimated_time: route.estimated_time });
+  res.json({ 
+    ...bus.toObject(), 
+    bus_id: bus._id,
+    route_name: route.name, 
+    start_location: route.start_location, 
+    end_location: route.end_location, 
+    estimated_time: route.estimated_time 
+  });
 });
 
 app.post('/api/trips/start', authenticateToken, async (req, res) => {
@@ -782,63 +832,111 @@ app.post('/api/trips/notify-delay', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/trips/scan-qr', authenticateToken, async (req, res) => {
-  if (req.user.type !== 'driver') return res.status(403).json({ error: 'Access denied' });
+  if (req.user.type !== 'driver') {
+    return res.status(403).json({ error: 'Access denied: Only drivers can scan boarding QR codes' });
+  }
   
   const { tripId, qrCode } = req.body;
+  if (!tripId || !qrCode || typeof qrCode !== 'string') {
+    return res.status(400).json({ error: 'Trip ID and QR code payload are required' });
+  }
   
   try {
-    const decoded = Buffer.from(qrCode, 'base64').toString('utf-8');
-    const [studentId, tripIdFromQR, timeSlot] = decoded.split('-');
-    
+    let decoded;
+    try {
+      decoded = Buffer.from(qrCode.trim(), 'base64').toString('utf-8');
+    } catch (_) {
+      return res.status(400).json({ error: 'Invalid QR code encoding' });
+    }
+
+    const parts = decoded.split('-');
+    if (parts.length !== 3) {
+      return res.status(400).json({ error: 'Invalid QR code format' });
+    }
+
+    const [studentId, tripIdFromQR, timeSlot] = parts;
+
+    // Validate time slot: accept current or immediately prior 10s slot
     const currentTimeSlot = Math.floor(Date.now() / 1000 / 10);
-    if (parseInt(timeSlot) !== currentTimeSlot) {
-      return res.status(400).json({ error: 'QR code expired. Please ask parent to refresh.' });
+    const parsedTimeSlot = parseInt(timeSlot, 10);
+    if (isNaN(parsedTimeSlot) || (parsedTimeSlot !== currentTimeSlot && parsedTimeSlot !== currentTimeSlot - 1)) {
+      return res.status(400).json({ error: 'QR code has expired. Please ask parent to refresh.' });
     }
-    
-    const student = await Student.findById(studentId);
-    if (!student) return res.status(400).json({ error: 'Invalid QR code' });
-    
+
+    // Validate ObjectIds
+    if (!mongoose.Types.ObjectId.isValid(tripId) || !mongoose.Types.ObjectId.isValid(tripIdFromQR)) {
+      return res.status(400).json({ error: 'Invalid trip identifier in QR code' });
+    }
+
+    if (tripId.toString() !== tripIdFromQR.toString()) {
+      return res.status(400).json({ error: 'QR code does not match this trip' });
+    }
+
+    // Validate active trip
     const trip = await Trip.findById(tripId);
-    if (!trip || trip._id.toString() !== tripIdFromQR) {
-      return res.status(400).json({ error: 'QR code does not match trip' });
+    if (!trip) {
+      return res.status(404).json({ error: 'Trip not found' });
     }
-    
+
+    if (trip.status !== 'ongoing') {
+      return res.status(400).json({ error: 'This trip is no longer active' });
+    }
+
+    if (trip.driver_id?.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ error: 'You are not the assigned driver for this trip' });
+    }
+
+    // Validate student
+    if (!mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({ error: 'Invalid student identifier in QR code' });
+    }
+
+    const student = await Student.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ error: 'Student record not found' });
+    }
+
+    // Check duplicate check-in
     const alreadyCheckedIn = trip.check_ins?.some(
-      ci => ci.student_id?.toString() === studentId
+      ci => ci.student_id?.toString() === studentId.toString()
     );
     if (alreadyCheckedIn) {
-      return res.status(400).json({ error: 'Student already checked in' });
+      return res.status(400).json({ error: `${student.name} is already checked in on this trip` });
     }
-    
+
+    // Record check-in
     const checkIn = {
-      student_id: studentId,
+      student_id: student._id,
       student_name: student.name,
-      pickup_location: student.pickup_location,
+      pickup_location: student.pickup_location || 'Assigned Stop',
       scanned_at: new Date(),
       status: 'picked_up'
     };
-    
+
     if (!trip.check_ins) trip.check_ins = [];
     trip.check_ins.push(checkIn);
     await trip.save();
-    
-    await Notification.create({
-      student_id: studentId,
+
+    const notif = await Notification.create({
+      student_id: student._id,
       parent_phone: student.parent_phone,
-      trip_id: tripId,
+      trip_id: trip._id,
       type: 'picked_up',
-      message: `${student.name} has been picked up`,
+      message: `${student.name} has been scanned and safely boarded the bus.`,
       latitude: trip.current_lat,
       longitude: trip.current_lng
     });
-    
+
+    io.to(`trip:${trip._id}`).emit('notification:new', notif);
+
     res.json({ 
       message: 'Student checked in successfully',
       student_name: student.name,
-      pickup_location: student.pickup_location
+      pickup_location: student.pickup_location || 'Assigned Stop'
     });
   } catch (error) {
-    res.status(400).json({ error: 'Invalid QR code format' });
+    console.error('Scan QR error:', error);
+    res.status(400).json({ error: 'Unable to process QR code' });
   }
 });
 

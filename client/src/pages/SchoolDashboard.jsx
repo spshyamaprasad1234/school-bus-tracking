@@ -1,10 +1,11 @@
-  import { useState, useEffect, useRef } from 'react';
-  import { useNavigate, Link, Routes, Route } from 'react-router-dom';
-  import { Bus, GraduationCap, Users, Route as RouteIcon, Plus, Pencil, Trash2, Search, X, AlertTriangle } from 'lucide-react';
-  import { schoolAPI, tripAPI } from '../api';
-  import { clearAuth } from '../auth';
-  import { useToast } from '../App';
-  import gsap from 'gsap';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate, Link, Routes, Route } from 'react-router-dom';
+import { Bus, GraduationCap, Users, Route as RouteIcon, Plus, Pencil, Trash2, Search, X, AlertTriangle } from 'lucide-react';
+import { useJsApiLoader } from '@react-google-maps/api';
+import { schoolAPI, tripAPI } from '../api';
+import { clearAuth } from '../auth';
+import { useToast } from '../App';
+import gsap from 'gsap';
 
   function Dashboard() {
     const [stats, setStats] = useState({ driverCount: 0, busCount: 0, routeCount: 0, studentCount: 0 });
@@ -16,39 +17,33 @@
     const statsRef = useRef(null);
 
     useEffect(() => {
-      loadData();
-      loadTrips();
+      let isMounted = true;
+      const init = async () => {
+        try {
+          const [dashboardRes, infoRes, tripsRes] = await Promise.all([
+            schoolAPI.getDashboard(),
+            schoolAPI.getInfo(),
+            tripAPI.getActiveTrips()
+          ]);
+          if (!isMounted) return;
+          setStats(dashboardRes.data);
+          setInfo(infoRes.data);
+          setTrips(tripsRes.data);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          if (isMounted) setLoading(false);
+        }
+      };
+      init();
       if (statsRef.current) {
         gsap.fromTo(statsRef.current.children,
           { opacity: 0, y: 20 },
           { opacity: 1, y: 0, duration: 0.4, stagger: 0.08, delay: 0.15, ease: 'power2.out' }
         );
       }
+      return () => { isMounted = false; };
     }, []);
-
-    const loadData = async () => {
-      try {
-        const [dashboardRes, infoRes] = await Promise.all([
-          schoolAPI.getDashboard(),
-          schoolAPI.getInfo()
-        ]);
-        setStats(dashboardRes.data);
-        setInfo(infoRes.data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const loadTrips = async () => {
-      try {
-        const res = await tripAPI.getActiveTrips();
-        setTrips(res.data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
 
     const handleLogout = () => setShowLogoutConfirm(true);
     const confirmLogout = () => { clearAuth(); navigate('/login'); };
@@ -173,14 +168,26 @@
     const navigate = useNavigate();
     const toast = useToast();
 
-    useEffect(() => { loadDrivers(); }, []);
-
-    const loadDrivers = async () => {
+    const loadDrivers = useCallback(async () => {
       try {
         const res = await schoolAPI.getDrivers();
         setDrivers(res.data);
       } catch { toast.error('Failed to load drivers'); }
-    };
+    }, [toast]);
+
+    useEffect(() => {
+      let isMounted = true;
+      const fetchDrivers = async () => {
+        try {
+          const res = await schoolAPI.getDrivers();
+          if (isMounted) setDrivers(res.data);
+        } catch {
+          if (isMounted) toast.error('Failed to load drivers');
+        }
+      };
+      fetchDrivers();
+      return () => { isMounted = false; };
+    }, [toast]);
 
     const openAdd = () => {
       setEditingDriver(null);
@@ -369,16 +376,32 @@
     const navigate = useNavigate();
     const toast = useToast();
 
-    useEffect(() => { loadData(); }, []);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
       try {
         const [busesRes, driversRes, routesRes] = await Promise.all([schoolAPI.getBuses(), schoolAPI.getDrivers(), schoolAPI.getRoutes()]);
         setBuses(busesRes.data);
         setDrivers(driversRes.data);
         setRoutes(routesRes.data);
       } catch { toast.error('Failed to load data'); }
-    };
+    }, [toast]);
+
+    useEffect(() => {
+      let isMounted = true;
+      const fetchBuses = async () => {
+        try {
+          const [busesRes, driversRes, routesRes] = await Promise.all([schoolAPI.getBuses(), schoolAPI.getDrivers(), schoolAPI.getRoutes()]);
+          if (isMounted) {
+            setBuses(busesRes.data);
+            setDrivers(driversRes.data);
+            setRoutes(routesRes.data);
+          }
+        } catch {
+          if (isMounted) toast.error('Failed to load data');
+        }
+      };
+      fetchBuses();
+      return () => { isMounted = false; };
+    }, [toast]);
 
     const openAdd = () => {
       setEditingBus(null);
@@ -541,32 +564,50 @@
     const [showForm, setShowForm] = useState(false);
     const [editingRoute, setEditingRoute] = useState(null);
     const [formData, setFormData] = useState({ name: '', startLocation: '', endLocation: '', estimatedTime: '', stops: [] });
-    const [newStop, setNewStop] = useState({ name: '', address: '', order: 0 });
+    const [newStop, setNewStop] = useState({ name: '', address: '', order: 0, latitude: '', longitude: '' });
+    const [geocoding, setGeocoding] = useState(false);
     const [search, setSearch] = useState('');
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const toast = useToast();
 
-    useEffect(() => { loadRoutes(); }, []);
+    const { isLoaded: isMapsLoaded } = useJsApiLoader({
+      googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+    });
 
-    const loadRoutes = async () => {
+    const loadRoutes = useCallback(async () => {
       try {
         const res = await schoolAPI.getRoutes();
         setRoutes(res.data);
       } catch { toast.error('Failed to load routes'); }
-    };
+    }, [toast]);
+
+    useEffect(() => {
+      let isMounted = true;
+      const fetchRoutes = async () => {
+        try {
+          const res = await schoolAPI.getRoutes();
+          if (isMounted) setRoutes(res.data);
+        } catch {
+          if (isMounted) toast.error('Failed to load routes');
+        }
+      };
+      fetchRoutes();
+      return () => { isMounted = false; };
+    }, [toast]);
 
     const openAdd = () => {
       setEditingRoute(null);
       setFormData({ name: '', startLocation: '', endLocation: '', estimatedTime: '', stops: [] });
-      setNewStop({ name: '', address: '', order: 0 });
+      setNewStop({ name: '', address: '', order: 0, latitude: '', longitude: '' });
       setShowForm(true);
     };
 
     const openEdit = (route) => {
       setEditingRoute(route);
       setFormData({ name: route.name, startLocation: route.start_location, endLocation: route.end_location, estimatedTime: route.estimated_time, stops: route.stops || [] });
+      setNewStop({ name: '', address: '', order: 0, latitude: '', longitude: '' });
       setShowForm(true);
     };
 
@@ -574,7 +615,13 @@
       e.preventDefault();
       setLoading(true);
       try {
-        const stopsWithOrder = formData.stops.map((stop, idx) => ({ ...stop, order: idx + 1 }));
+        const stopsWithOrder = formData.stops.map((stop, idx) => ({
+          name: stop.name,
+          address: stop.address || '',
+          order: idx + 1,
+          latitude: typeof stop.latitude === 'number' ? stop.latitude : (stop.latitude ? parseFloat(stop.latitude) : undefined),
+          longitude: typeof stop.longitude === 'number' ? stop.longitude : (stop.longitude ? parseFloat(stop.longitude) : undefined)
+        }));
         const payload = { ...formData, stops: stopsWithOrder };
         if (editingRoute) {
           await schoolAPI.updateRoute(editingRoute._id, payload);
@@ -601,13 +648,55 @@
       } catch { toast.error('Failed to delete route'); }
     };
 
-    const addStop = () => {
+    const addStop = async () => {
       if (!newStop.name.trim()) return;
-      setFormData({
-        ...formData,
-        stops: [...formData.stops, { ...newStop, order: formData.stops.length + 1 }]
-      });
-      setNewStop({ name: '', address: '', order: 0 });
+      setGeocoding(true);
+
+      let lat = newStop.latitude ? parseFloat(newStop.latitude) : undefined;
+      let lng = newStop.longitude ? parseFloat(newStop.longitude) : undefined;
+
+      const searchTarget = (newStop.address || newStop.name).trim();
+      if ((!lat || !lng) && isMapsLoaded && window.google?.maps?.Geocoder && searchTarget) {
+        try {
+          const coords = await new Promise((resolve) => {
+            const geocoder = new window.google.maps.Geocoder();
+            geocoder.geocode({ address: searchTarget }, (results, status) => {
+              if (status === 'OK' && results && results[0]?.geometry?.location) {
+                const loc = results[0].geometry.location;
+                resolve({
+                  latitude: typeof loc.lat === 'function' ? loc.lat() : loc.lat,
+                  longitude: typeof loc.lng === 'function' ? loc.lng() : loc.lng
+                });
+              } else {
+                resolve(null);
+              }
+            });
+          });
+          if (coords) {
+            lat = coords.latitude;
+            lng = coords.longitude;
+          }
+        } catch (geoErr) {
+          console.warn('Geocoding error:', geoErr);
+        }
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        stops: [
+          ...prev.stops,
+          {
+            name: newStop.name.trim(),
+            address: newStop.address.trim(),
+            order: prev.stops.length + 1,
+            ...(typeof lat === 'number' && !isNaN(lat) ? { latitude: lat } : {}),
+            ...(typeof lng === 'number' && !isNaN(lng) ? { longitude: lng } : {})
+          }
+        ]
+      }));
+
+      setNewStop({ name: '', address: '', order: 0, latitude: '', longitude: '' });
+      setGeocoding(false);
     };
 
     const removeStop = (index) => {
@@ -684,11 +773,13 @@
                   <div className="form-group"><label>Estimated Time</label><input type="text" placeholder="e.g. 45 mins" value={formData.estimatedTime} onChange={e => setFormData({...formData, estimatedTime: e.target.value})} /></div>
 
                   <div className="form-group" style={{ borderTop: '1px solid var(--gray-100)', paddingTop: 16, marginTop: 4 }}>
-                    <label>Stops</label>
+                    <label>Stops (Address automatically geocodes coordinates)</label>
                     <div className="stop-input-row" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                       <input type="text" placeholder="Stop name" value={newStop.name} onChange={e => setNewStop({...newStop, name: e.target.value})} style={{ flex: 1 }} />
-                      <input type="text" placeholder="Address" value={newStop.address} onChange={e => setNewStop({...newStop, address: e.target.value})} style={{ flex: 2 }} />
-                      <button type="button" onClick={addStop} className="btn btn-success btn-sm">+ Add</button>
+                      <input type="text" placeholder="Address (e.g. 123 Main St)" value={newStop.address} onChange={e => setNewStop({...newStop, address: e.target.value})} style={{ flex: 2 }} />
+                      <button type="button" onClick={addStop} className="btn btn-success btn-sm" disabled={geocoding}>
+                        {geocoding ? 'Locating...' : '+ Add'}
+                      </button>
                     </div>
                     {formData.stops.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -706,7 +797,18 @@
                               fontSize: 11, fontWeight: 600, flexShrink: 0
                             }}>{index + 1}</span>
                             <span style={{ fontWeight: 600, color: 'var(--secondary)', fontSize: 14 }}>{stop.name}</span>
-                            <span style={{ flex: 1, color: 'var(--gray-400)', fontSize: 13 }}>{stop.address}</span>
+                            <span style={{ flex: 1, color: 'var(--gray-400)', fontSize: 13 }}>
+                              {stop.address}
+                              {typeof stop.latitude === 'number' && typeof stop.longitude === 'number' ? (
+                                <span style={{
+                                  marginLeft: 8, fontSize: 11, color: '#16a34a',
+                                  background: 'rgba(22,163,74,0.1)', padding: '2px 6px',
+                                  borderRadius: 4, fontWeight: 500
+                                }}>
+                                  📍 {stop.latitude.toFixed(4)}, {stop.longitude.toFixed(4)}
+                                </span>
+                              ) : null}
+                            </span>
                             <button type="button" onClick={() => removeStop(index)} className="btn btn-sm btn-danger" style={{ width: 26, height: 26, padding: 0 }}>×</button>
                           </div>
                         ))}
@@ -716,7 +818,7 @@
 
                   <div className="form-actions">
                     <button type="button" className="btn btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
-                    <button type="submit" className="btn btn-primary" disabled={loading}>
+                    <button type="submit" className="btn btn-primary" disabled={loading || geocoding}>
                       {loading ? <><span className="spinner"></span> Saving...</> : (editingRoute ? 'Update Route' : 'Add Route')}
                     </button>
                   </div>
@@ -757,15 +859,30 @@
     const navigate = useNavigate();
     const toast = useToast();
 
-    useEffect(() => { loadData(); }, []);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
       try {
         const [studentsRes, routesRes] = await Promise.all([schoolAPI.getStudents(), schoolAPI.getRoutes()]);
         setStudents(studentsRes.data);
         setRoutes(routesRes.data);
       } catch { toast.error('Failed to load data'); }
-    };
+    }, [toast]);
+
+    useEffect(() => {
+      let isMounted = true;
+      const fetchStudents = async () => {
+        try {
+          const [studentsRes, routesRes] = await Promise.all([schoolAPI.getStudents(), schoolAPI.getRoutes()]);
+          if (isMounted) {
+            setStudents(studentsRes.data);
+            setRoutes(routesRes.data);
+          }
+        } catch {
+          if (isMounted) toast.error('Failed to load data');
+        }
+      };
+      fetchStudents();
+      return () => { isMounted = false; };
+    }, [toast]);
 
     const openAdd = () => {
       setEditingStudent(null);
@@ -787,7 +904,7 @@
           await schoolAPI.updateStudent(editingStudent._id, formData);
           toast.success('Student updated successfully');
         } else {
-          const res = await schoolAPI.addStudent(formData);
+          await schoolAPI.addStudent(formData);
           toast.success('Student added successfully');
         }
         setShowForm(false);
