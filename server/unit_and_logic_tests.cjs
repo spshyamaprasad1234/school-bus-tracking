@@ -260,8 +260,172 @@ assert(frame4 === 'IGNORED_LOCKED', 'Fourth rapid frame is blocked by mutex lock
 assert(frame5 === 'IGNORED_LOCKED', 'Fifth rapid frame is blocked by mutex lock');
 assert(apiRequestCount === 1, 'Exactly one API request was made despite 5 concurrent camera detections');
 
+// 8. GPS Data Sanitization & Range Validation
+console.log('\n--- 8. GPS DATA SANITIZATION & VALIDATION ---');
+function validateGPSData(lat, lng, accuracy, speed, heading) {
+  if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+    return { valid: false, error: 'Invalid latitude or longitude coordinates' };
+  }
+  if (lat < -90 || lat > 90) return { valid: false, error: 'Latitude out of range [-90, 90]' };
+  if (lng < -180 || lng > 180) return { valid: false, error: 'Longitude out of range [-180, 180]' };
+  if (accuracy != null && (typeof accuracy !== 'number' || isNaN(accuracy) || accuracy < 0)) {
+    return { valid: false, error: 'Invalid accuracy radius' };
+  }
+  if (speed != null && (typeof speed !== 'number' || isNaN(speed) || speed < 0 || speed > 200)) {
+    return { valid: false, error: 'Invalid speed value' };
+  }
+  if (heading != null && (typeof heading !== 'number' || isNaN(heading) || heading < 0 || heading > 360)) {
+    return { valid: false, error: 'Invalid heading angle [0, 360]' };
+  }
+  return { valid: true };
+}
+
+assert(validateGPSData(40.7128, -74.0060, 5, 30, 90).valid === true, 'Valid GPS coordinate accepted');
+assert(validateGPSData(95.0, -74.0060).valid === false, 'Latitude > 90 rejected');
+assert(validateGPSData(-95.0, -74.0060).valid === false, 'Latitude < -90 rejected');
+assert(validateGPSData(40.7128, 185.0).valid === false, 'Longitude > 180 rejected');
+assert(validateGPSData(40.7128, -185.0).valid === false, 'Longitude < -180 rejected');
+assert(validateGPSData(NaN, -74.0060).valid === false, 'NaN coordinate rejected');
+assert(validateGPSData('40.7128', -74.0060).valid === false, 'String coordinate rejected without parsing');
+assert(validateGPSData(40.7128, -74.0060, -10).valid === false, 'Negative accuracy radius rejected');
+assert(validateGPSData(40.7128, -74.0060, 10, -5).valid === false, 'Negative speed rejected');
+assert(validateGPSData(40.7128, -74.0060, 10, 30, 400).valid === false, 'Heading > 360 rejected');
+
+// 9. Live ETA Calculation Engine
+console.log('\n--- 9. LIVE ETA CALCULATION ENGINE ---');
+function calculateETA(currentLat, currentLng, destLat, destLng, speedKmh = 0) {
+  if (currentLat == null || currentLng == null || destLat == null || destLng == null) return null;
+  const distance = calculateDistance(currentLat, currentLng, destLat, destLng);
+  if (distance <= 0.08) {
+    return { distance_km: Math.round(distance * 100) / 100, duration_minutes: 0, status: 'ARRIVED', eta_timestamp: new Date() };
+  }
+  const effectiveSpeed = (speedKmh && speedKmh > 8) ? Math.min(speedKmh, 60) : 25;
+  const durationHours = distance / effectiveSpeed;
+  const durationMinutes = Math.max(1, Math.round(durationHours * 60));
+  const etaTimestamp = new Date(Date.now() + durationMinutes * 60 * 1000);
+  return {
+    distance_km: Math.round(distance * 100) / 100,
+    duration_minutes: durationMinutes,
+    status: durationMinutes <= 3 ? 'APPROACHING' : 'EN_ROUTE',
+    eta_timestamp: etaTimestamp
+  };
+}
+
+const etaClose = calculateETA(40.7128, -74.0060, 40.7129, -74.0061, 20);
+assert(etaClose.status === 'ARRIVED' && etaClose.duration_minutes === 0, 'Distance <= 80m gives ARRIVED and 0 min');
+
+const eta5kmAt30kmh = calculateETA(40.7128, -74.0060, 40.7580, -74.0060, 30);
+assert(eta5kmAt30kmh.distance_km >= 4.5 && eta5kmAt30kmh.distance_km <= 5.5, `Distance ~5km calculated: ${eta5kmAt30kmh.distance_km} km`);
+assert(eta5kmAt30kmh.duration_minutes >= 8 && eta5kmAt30kmh.duration_minutes <= 12, `5km at 30km/h yields ~10 min (${eta5kmAt30kmh.duration_minutes} min)`);
+assert(eta5kmAt30kmh.status === 'EN_ROUTE', 'Distance > 3 min returns status EN_ROUTE');
+
+const etaFallbackSpeed = calculateETA(40.7128, -74.0060, 40.7580, -74.0060, 0);
+assert(etaFallbackSpeed.duration_minutes >= 10 && etaFallbackSpeed.duration_minutes <= 15, 'Zero speed gracefully falls back to default 25 km/h urban speed');
+
+// 10. Route Progression & Next Stop Determination
+console.log('\n--- 10. ROUTE PROGRESSION & NEXT STOP DETERMINATION ---');
+const sampleStops = [
+  { order: 1, name: 'Main Gate', latitude: 40.7100, longitude: -74.0060 },
+  { order: 2, name: 'Library Square', latitude: 40.7200, longitude: -74.0060 },
+  { order: 3, name: 'Sports Complex', latitude: 40.7300, longitude: -74.0060 },
+  { order: 4, name: 'Residential Colony', latitude: 40.7400, longitude: -74.0060 }
+];
+
+function determineNextStop(busLat, busLng, stops, currentStopOrder = 1) {
+  if (!stops || stops.length === 0) return { nextStop: null, remainingStops: [] };
+  const sortedStops = [...stops].sort((a, b) => a.order - b.order);
+  let resolvedOrder = currentStopOrder;
+  const currentStop = sortedStops.find(s => s.order === resolvedOrder);
+  if (currentStop && typeof currentStop.latitude === 'number' && typeof currentStop.longitude === 'number') {
+    const distToCurrent = calculateDistance(busLat, busLng, currentStop.latitude, currentStop.longitude);
+    if (distToCurrent <= 0.15 && resolvedOrder < sortedStops.length) {
+      resolvedOrder += 1;
+    }
+  }
+  const nextStop = sortedStops.find(s => s.order === resolvedOrder) || sortedStops[sortedStops.length - 1];
+  const remainingStops = sortedStops.filter(s => s.order >= resolvedOrder);
+  return { nextStop, nextStopOrder: nextStop?.order, remainingStops };
+}
+
+const prog1 = determineNextStop(40.7050, -74.0060, sampleStops, 1);
+assert(prog1.nextStopOrder === 1, 'Bus approaching Stop 1 keeps nextStopOrder = 1');
+assert(prog1.remainingStops.length === 4, 'All 4 stops remain');
+
+const prog2 = determineNextStop(40.7101, -74.0060, sampleStops, 1); // 10 meters from Stop 1
+assert(prog2.nextStopOrder === 2, 'Bus arriving at Stop 1 advances nextStopOrder to 2');
+assert(prog2.remainingStops.length === 3, '3 remaining stops after passing Stop 1');
+
+// 11. Route Deviation Detection Algorithm
+console.log('\n--- 11. ROUTE DEVIATION DETECTION ---');
+function detectRouteDeviation(busLat, busLng, stops, maxDeviationKm = 0.5) {
+  if (!stops || stops.length < 2) return { isDeviated: false, distanceKm: 0 };
+  const sortedStops = [...stops].sort((a, b) => a.order - b.order);
+  let minDistance = Infinity;
+
+  for (let i = 0; i < sortedStops.length - 1; i++) {
+    const s1 = sortedStops[i];
+    const s2 = sortedStops[i + 1];
+    if (typeof s1.latitude !== 'number' || typeof s2.latitude !== 'number') continue;
+    const d1 = calculateDistance(busLat, busLng, s1.latitude, s1.longitude);
+    const d2 = calculateDistance(busLat, busLng, s2.latitude, s2.longitude);
+    const dSegment = (d1 + d2) / 2;
+    if (dSegment < minDistance) minDistance = dSegment;
+  }
+
+  const isDeviated = minDistance > maxDeviationKm && minDistance !== Infinity;
+  return { isDeviated, distanceKm: Math.round(minDistance * 100) / 100 };
+}
+
+// Bus along route corridor (between stop 1: 40.7100 and stop 2: 40.7200 at 40.7150, -74.0060)
+const onRouteCheck = detectRouteDeviation(40.7150, -74.0060, sampleStops, 0.6);
+assert(onRouteCheck.isDeviated === false, `On-corridor bus is not flagged as deviated (dist: ${onRouteCheck.distanceKm} km)`);
+
+// Bus deviated 5 km away to -73.9000
+const offRouteCheck = detectRouteDeviation(40.7150, -73.9000, sampleStops, 0.6);
+assert(offRouteCheck.isDeviated === true, `Off-corridor bus is flagged as deviated (dist: ${offRouteCheck.distanceKm} km > 0.6 km)`);
+
+// 12. Driver Safety Scoring Algorithm
+console.log('\n--- 12. DRIVER SAFETY SCORING ENGINE ---');
+function calculateSafetyScore(maxSpeedKmh, avgSpeedKmh, deviationsCount, emergencyCount) {
+  let score = 100;
+  if (maxSpeedKmh > 80) score -= 30;
+  else if (maxSpeedKmh > 65) score -= 15;
+  else if (maxSpeedKmh > 50) score -= 5;
+
+  if (avgSpeedKmh > 45) score -= 10;
+  score -= Math.min(25, (deviationsCount || 0) * 8);
+  score -= Math.min(20, (emergencyCount || 0) * 10);
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+const safeScore = calculateSafetyScore(45, 28, 0, 0);
+assert(safeScore === 100, `Model driver receives 100 score (got: ${safeScore})`);
+
+const mildScore = calculateSafetyScore(60, 32, 1, 0);
+assert(mildScore >= 80 && mildScore <= 90, `Mild speed/deviation driver gets ~87 score (got: ${mildScore})`);
+
+const unsafeScore = calculateSafetyScore(85, 50, 2, 1);
+assert(unsafeScore <= 50, `Speeding & deviating driver receives low safety score (got: ${unsafeScore})`);
+
+// 13. Driver SOS Emergency Dispatch Payload Validation
+console.log('\n--- 13. DRIVER SOS EMERGENCY LOGIC ---');
+function validateSOSPayload(payload) {
+  if (!payload || typeof payload !== 'object') return { valid: false, error: 'Empty payload' };
+  if (!payload.reason || typeof payload.reason !== 'string' || payload.reason.trim().length === 0) {
+    return { valid: false, error: 'Emergency reason required' };
+  }
+  const allowedReasons = ['Breakdown', 'Accident', 'Medical', 'Security', 'Weather / Road Block', 'Other'];
+  return { valid: true, severity: payload.severity || 'CRITICAL', reason: payload.reason.trim() };
+}
+
+assert(validateSOSPayload({ reason: 'Breakdown', severity: 'CRITICAL' }).valid === true, 'Valid SOS Breakdown payload accepted');
+assert(validateSOSPayload({ reason: 'Medical' }).severity === 'CRITICAL', 'Default SOS severity is CRITICAL');
+assert(validateSOSPayload({ reason: '' }).valid === false, 'Blank SOS reason rejected');
+assert(validateSOSPayload(null).valid === false, 'Null SOS payload rejected');
+
 console.log('\n====================================================');
 console.log(`TEST SUMMARY: ${results.passed} PASSED, ${results.failed} FAILED (TOTAL: ${results.total})`);
 console.log('====================================================');
 
 process.exit(results.failed > 0 ? 1 : 0);
+

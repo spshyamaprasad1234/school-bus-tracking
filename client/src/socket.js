@@ -70,9 +70,24 @@ export function joinTripRoom(tripId) {
   }
 }
 
+let activeSchoolId = null;
+
+export function joinSchoolFleet(schoolId) {
+  activeSchoolId = schoolId;
+  if (socket?.connected && schoolId) {
+    socket.emit('school:join-fleet', schoolId);
+  }
+}
+
 export function emitLocationUpdate(data) {
   if (socket?.connected) {
     socket.emit('driver:location-update', data);
+  }
+}
+
+export function emitDriverSOS(data) {
+  if (socket?.connected) {
+    socket.emit('driver:sos', data);
   }
 }
 
@@ -80,6 +95,46 @@ export function onTripLocationUpdate(callback) {
   if (socket) {
     socket.on('trip:location-update', callback);
     return () => socket.off('trip:location-update', callback);
+  }
+  return () => {};
+}
+
+export function onFleetLocationUpdate(callback) {
+  if (socket) {
+    socket.on('fleet:location-update', callback);
+    return () => socket.off('fleet:location-update', callback);
+  }
+  return () => {};
+}
+
+export function onFleetAlert(callback) {
+  if (socket) {
+    socket.on('fleet:alert', callback);
+    return () => socket.off('fleet:alert', callback);
+  }
+  return () => {};
+}
+
+export function onEmergencyAlert(callback) {
+  if (socket) {
+    socket.on('emergency:alert', callback);
+    return () => socket.off('emergency:alert', callback);
+  }
+  return () => {};
+}
+
+export function onEmergencyAcknowledged(callback) {
+  if (socket) {
+    socket.on('emergency:acknowledged', callback);
+    return () => socket.off('emergency:acknowledged', callback);
+  }
+  return () => {};
+}
+
+export function onTripStarted(callback) {
+  if (socket) {
+    socket.on('trip:started', callback);
+    return () => socket.off('trip:started', callback);
   }
   return () => {};
 }
@@ -99,3 +154,4 @@ export function onNewNotification(callback) {
   }
   return () => {};
 }
+

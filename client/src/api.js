@@ -55,7 +55,10 @@ export const schoolAPI = {
   getStudents: () => api.get('/schools/students'),
   addStudent: (data) => api.post('/schools/students', data),
   updateStudent: (id, data) => api.put(`/schools/students/${id}`, data),
-  deleteStudent: (id) => api.delete(`/schools/students/${id}`)
+  deleteStudent: (id) => api.delete(`/schools/students/${id}`),
+  getLiveFleet: () => api.get('/schools/live-fleet'),
+  getTripHistory: (params) => api.get('/schools/trips/history', { params }),
+  getAnalytics: () => api.get('/schools/analytics')
 };
 
 export const driverAPI = {
@@ -66,7 +69,8 @@ export const driverAPI = {
   updateLocation: (data) => api.post('/trips/update-location', data),
   endTrip: (data) => api.post('/trips/end', data),
   scanQR: (data) => api.post('/trips/scan-qr', data),
-  notifyDelay: (data) => api.post('/trips/notify-delay', data)
+  notifyDelay: (data) => api.post('/trips/notify-delay', data),
+  triggerSOS: (tripId, data) => api.post(`/trips/${tripId}/sos`, data)
 };
 
 export const parentAPI = {
@@ -78,7 +82,16 @@ export const parentAPI = {
 };
 
 export const tripAPI = {
-  getActiveTrips: () => api.get('/trips/active')
+  getActiveTrips: () => api.get('/trips/active'),
+  getReplay: (tripId) => api.get(`/trips/${tripId}/replay`),
+  triggerSOS: (tripId, data) => api.post(`/trips/${tripId}/sos`, data),
+  acknowledgeSOS: (tripId) => api.put(`/trips/${tripId}/sos/acknowledge`)
+};
+
+export const healthAPI = {
+  getHealth: () => api.get('/health'),
+  getLive: () => api.get('/health/live'),
+  getReady: () => api.get('/health/ready')
 };
 
 export default api;
