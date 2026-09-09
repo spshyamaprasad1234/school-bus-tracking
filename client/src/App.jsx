@@ -1,5 +1,6 @@
+/* eslint-disable react-refresh/only-export-components */
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, useRef, createContext, useContext, useCallback, createPortal } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, useCallback, useMemo, createPortal } from 'react';
 import gsap from 'gsap';
 import Login from './pages/Login';
 import SchoolSignup from './pages/SchoolSignup';
@@ -59,12 +60,12 @@ function ToastProvider({ children }) {
     }, duration);
   }, []);
 
-  const toast = useCallback({
+  const toast = useMemo(() => ({
     success: (msg) => addToast(msg, 'success'),
     error: (msg) => addToast(msg, 'error'),
     info: (msg) => addToast(msg, 'info'),
     warning: (msg) => addToast(msg, 'warning'),
-  }, [addToast]);
+  }), [addToast]);
 
   return (
     <ToastContext.Provider value={toast}>
@@ -85,24 +86,12 @@ function ToastProvider({ children }) {
 }
 
 function ProtectedRoute({ children, allowedType }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
+  const [user] = useState(() => {
     const token = localStorage.getItem('token');
     const userType = localStorage.getItem('userType');
-    if (token && userType) {
-      setUser({ type: userType });
-    }
-    setLoading(false);
-  }, []);
+    return token && userType ? { type: userType } : null;
+  });
 
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', flexDirection: 'column', gap: '16px' }}>
-      <div className="spinner spinner-dark" style={{ width: 32, height: 32 }}></div>
-      <span style={{ color: 'var(--gray-400)', fontSize: 14 }}>Loading dashboard...</span>
-    </div>
-  );
   if (!user) return <Navigate to="/login" />;
   if (allowedType && user.type !== allowedType) return <Navigate to="/login" />;
 

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Building2, Mail, Lock, MapPin, Phone } from 'lucide-react';
+import { 
+  Building2, Mail, Lock, MapPin, Phone, ArrowLeft, 
+  CheckCircle2 
+} from 'lucide-react';
 import { schoolAPI } from '../api';
 import { useToast } from '../App';
 import gsap from 'gsap';
@@ -11,109 +14,238 @@ function SchoolSignup() {
   const [formData, setFormData] = useState({ name: '', email: '', password: '', address: '', phone: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [schoolCode, setSchoolCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const boxRef = useRef(null);
+  const containerRef = useRef(null);
   const successRef = useRef(null);
 
   useEffect(() => {
-    gsap.fromTo(boxRef.current,
-      { opacity: 0, y: 30, scale: 0.98 },
-      { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: 'power2.out' }
-    );
+    if (containerRef.current) {
+      gsap.fromTo(containerRef.current,
+        { opacity: 0, y: 24 },
+        { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' }
+      );
+    }
   }, []);
+
+  const handleChange = (e) => {
+    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    setError('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    if (!formData.name || !formData.email || !formData.password || !formData.address || !formData.phone) {
+      setError('Please fill in all required fields.');
+      return;
+    }
     setLoading(true);
+    setError('');
     try {
-      const response = await schoolAPI.signup(formData);
-      setSuccess(`Registered successfully! Your school code is: ${response.data.schoolCode}`);
-      toast.success('School registered successfully!');
-      if (successRef.current) {
-        gsap.fromTo(successRef.current,
-          { opacity: 0, scale: 0.92 },
-          { opacity: 1, scale: 1, duration: 0.35, ease: 'back.out(1.7)' }
-        );
-      }
-      setTimeout(() => navigate('/login'), 4000);
+      const res = await schoolAPI.signup(formData);
+      setSchoolCode(res.data.school_code);
+      setSuccess('School registered successfully!');
+      toast.success('Registration successful! Save your school code.');
+      setTimeout(() => {
+        if (successRef.current) {
+          gsap.fromTo(successRef.current,
+            { scale: 0.9, opacity: 0 },
+            { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(1.7)' }
+          );
+        }
+      }, 50);
     } catch (err) {
-      const msg = err.response?.data?.error || 'Signup failed. Please try again.';
-      setError(msg);
-      gsap.fromTo('.error-message', { opacity: 0, x: -10 }, { opacity: 1, x: 0, duration: 0.25 });
+      setError(err.response?.data?.error || 'Registration failed. Please try again.');
+      toast.error(err.response?.data?.error || 'Registration failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleBack = () => {
-    gsap.to(boxRef.current, {
-      opacity: 0, x: -50, duration: 0.25,
-      onComplete: () => navigate('/login')
-    });
-  };
+  if (success && schoolCode) {
+    return (
+      <div className="login-container">
+        <div className="login-box glassmorphism" ref={successRef} style={{ textAlign: 'center', maxWidth: '480px' }}>
+          <div style={{
+            width: 72, height: 72, borderRadius: '50%',
+            background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success, #10b981)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 20px', border: '2px solid rgba(16, 185, 129, 0.2)'
+          }}>
+            <CheckCircle2 size={40} />
+          </div>
+
+          <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--slate-900)', marginBottom: '8px' }}>
+            Registration Complete!
+          </h2>
+          <p style={{ color: 'var(--slate-600)', fontSize: '14px', marginBottom: '24px', lineHeight: 1.5 }}>
+            Your institution is now ready. Save your unique School Code to share with your drivers and parents.
+          </p>
+
+          <div style={{
+            background: 'var(--slate-50)', border: '2px dashed var(--primary)',
+            borderRadius: '16px', padding: '24px', marginBottom: '24px'
+          }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--slate-500)', display: 'block', marginBottom: '8px' }}>
+              Your School Code
+            </span>
+            <div style={{
+              fontSize: '32px', fontWeight: 800, letterSpacing: '0.15em',
+              color: 'var(--primary)', fontFamily: 'monospace'
+            }}>
+              {schoolCode}
+            </div>
+            <span style={{ fontSize: '12px', color: 'var(--slate-500)', marginTop: '6px', display: 'block' }}>
+              Drivers & parents need this code during registration
+            </span>
+          </div>
+
+          <button
+            className="btn btn-primary btn-block btn-lg"
+            onClick={() => navigate('/login')}
+          >
+            Proceed to School Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="login-container">
-      <div className="login-box" ref={boxRef}>
-        <button onClick={handleBack} className="back-btn" style={{ marginBottom: 16 }}>
-          <ArrowLeft size={16} /> Back to Login
-        </button>
-
-        <div className="brand" style={{ marginBottom: 24 }}>
-          <div className="brand-icon">
-            <Building2 size={28} />
+      <div className="login-box glassmorphism" ref={containerRef} style={{ maxWidth: '520px' }}>
+        <div className="login-header">
+          <Link to="/login" style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            color: 'var(--slate-500)', fontSize: '13px', fontWeight: 600,
+            textDecoration: 'none', marginBottom: '16px', transition: 'color 0.2s'
+          }}>
+            <ArrowLeft size={16} /> Back to Sign In
+          </Link>
+          <div style={{
+            width: 48, height: 48, borderRadius: '12px',
+            background: 'rgba(37, 99, 235, 0.1)', color: 'var(--primary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 12px'
+          }}>
+            <Building2 size={26} />
           </div>
-          <h1>Register School</h1>
-          <p className="subtitle">Create your school account</p>
+          <h2 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--slate-900)', margin: 0 }}>
+            Register Your School
+          </h2>
+          <p style={{ color: 'var(--slate-600)', fontSize: '14px', marginTop: '6px' }}>
+            Set up real-time live fleet tracking & smart student check-ins
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        {error && (
+          <div className="alert alert-error" style={{ marginBottom: '20px' }}>
+            <span>✕</span> {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label>School Name</label>
-            <div style={{ position: 'relative' }}>
-              <span className="input-icon"><Building2 size={16} /></span>
-              <input type="text" placeholder="e.g. Springfield Elementary" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required />
+            <label>School / Institution Name</label>
+            <div className="input-with-icon">
+              <Building2 size={18} className="input-icon" />
+              <input
+                type="text"
+                name="name"
+                placeholder="e.g. St. Xavier's International School"
+                value={formData.name}
+                onChange={handleChange}
+                required
+              />
             </div>
           </div>
-          <div className="form-group">
-            <label>Email Address</label>
-            <div style={{ position: 'relative' }}>
-              <span className="input-icon"><Mail size={16} /></span>
-              <input type="email" placeholder="admin@school.edu" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required />
+
+          <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div className="form-group">
+              <label>Official Email</label>
+              <div className="input-with-icon">
+                <Mail size={18} className="input-icon" />
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="admin@school.edu"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Phone Number</label>
+              <div className="input-with-icon">
+                <Phone size={18} className="input-icon" />
+                <input
+                  type="tel"
+                  name="phone"
+                  placeholder="+1 (555) 000-0000"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
             </div>
           </div>
+
           <div className="form-group">
-            <label>Password</label>
-            <div style={{ position: 'relative' }}>
-              <span className="input-icon"><Lock size={16} /></span>
-              <input type="password" placeholder="Create a strong password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} required minLength={6} />
+            <label>School Address</label>
+            <div className="input-with-icon">
+              <MapPin size={18} className="input-icon" />
+              <input
+                type="text"
+                name="address"
+                placeholder="Campus address, City, State"
+                value={formData.address}
+                onChange={handleChange}
+                required
+              />
             </div>
           </div>
+
           <div className="form-group">
-            <label>Address</label>
-            <div style={{ position: 'relative' }}>
-              <span className="input-icon"><MapPin size={16} /></span>
-              <input type="text" placeholder="School address" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+            <label>Administrator Password</label>
+            <div className="input-with-icon">
+              <Lock size={18} className="input-icon" />
+              <input
+                type="password"
+                name="password"
+                placeholder="Create a strong password"
+                value={formData.password}
+                onChange={handleChange}
+                required
+                minLength={6}
+              />
             </div>
           </div>
-          <div className="form-group">
-            <label>Phone Number</label>
-            <div style={{ position: 'relative' }}>
-              <span className="input-icon"><Phone size={16} /></span>
-              <input type="tel" placeholder="+1 (555) 000-0000" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-            </div>
-          </div>
-          {error && <div className="error-message">{error}</div>}
-          {success && <div className="success-message" ref={successRef}>{success}</div>}
-          <button type="submit" disabled={loading}>
-            {loading ? <><span className="spinner"></span> Creating account...</> : 'Create Account'}
+
+          <button
+            type="submit"
+            className="btn btn-primary btn-block btn-lg"
+            disabled={loading}
+            style={{ marginTop: '8px' }}
+          >
+            {loading ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <span className="spinner" style={{ width: 16, height: 16 }}></span>
+                Registering School...
+              </span>
+            ) : (
+              'Create School Account'
+            )}
           </button>
         </form>
 
-        <p style={{ textAlign: 'center', marginTop: 20, fontSize: 13, color: 'var(--gray-400)' }}>
-          Already have an account? <Link to="/login" style={{ display: 'inline', marginTop: 0 }}>Sign in</Link>
-        </p>
+        <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '13px', color: 'var(--slate-500)' }}>
+          Already registered?{' '}
+          <Link to="/login" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'none' }}>
+            Sign In here
+          </Link>
+        </div>
       </div>
     </div>
   );

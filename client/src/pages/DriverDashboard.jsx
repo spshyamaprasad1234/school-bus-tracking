@@ -4,7 +4,7 @@ import { GoogleMap, useJsApiLoader, Marker, Polyline } from '@react-google-maps/
 import { 
   MapPin, LogOut, Play, Square, QrCode, Camera, UserCheck, Users, 
   AlertTriangle, Clock, X, RotateCcw, AlertOctagon, Compass, Gauge, 
-  Radio, ShieldAlert, CheckCircle2, ChevronRight 
+  Radio, ShieldAlert, CheckCircle2, ChevronRight, Navigation 
 } from 'lucide-react';
 import { driverAPI, tripAPI } from '../api';
 import { clearAuth } from '../auth';
@@ -12,10 +12,23 @@ import { useToast } from '../App';
 import { connectSocket, emitLocationUpdate, emitDriverSOS, onTripEnded } from '../socket';
 import gsap from 'gsap';
 import QRScanner from '../components/QRScanner';
+import StatusBadge from '../components/ui/StatusBadge';
+import ConfirmModal from '../components/ui/ConfirmModal';
+import EmptyState from '../components/ui/EmptyState';
 
-const mapContainerStyle = { width: '100%', height: '320px', borderRadius: '12px' };
-const defaultCenter = { lat: 40.7128, lng: -74.0060 };
-const mapOptions = { disableDefaultUI: false, zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: true };
+const mapContainerStyle = { width: '100%', height: '320px', borderRadius: '14px' };
+const defaultCenter = { lat: 28.6139, lng: 77.2090 };
+const mapOptions = { 
+  disableDefaultUI: false, 
+  zoomControl: true, 
+  streetViewControl: false, 
+  mapTypeControl: false, 
+  fullscreenControl: true,
+  styles: [
+    { featureType: 'poi', stylers: [{ visibility: 'simplified' }] },
+    { featureType: 'transit', stylers: [{ visibility: 'simplified' }] }
+  ]
+};
 
 const getHeadingDirection = (heading) => {
   if (heading == null || isNaN(heading)) return 'N';
@@ -33,6 +46,7 @@ function DriverDashboard() {
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [currentHeading, setCurrentHeading] = useState(0);
+  const [isStartingTrip, setIsStartingTrip] = useState(false);
   
   const [showQRScanner, setShowQRScanner] = useState(false);
   const [manualQRInput, setManualQRInput] = useState('');
@@ -44,6 +58,7 @@ function DriverDashboard() {
   const [showDelayModal, setShowDelayModal] = useState(false);
   const [delayMinutes, setDelayMinutes] = useState(15);
   const [delayReason, setDelayReason] = useState('');
+  const [isSendingDelay, setIsSendingDelay] = useState(false);
 
   const [showSOSModal, setShowSOSModal] = useState(false);
   const [sosReason, setSosReason] = useState('Breakdown');
@@ -51,6 +66,7 @@ function DriverDashboard() {
   const [sosActive, setSosActive] = useState(false);
   const [isSendingSOS, setIsSendingSOS] = useState(false);
 
+  const [showEndTripConfirm, setShowEndTripConfirm] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [timer, setTimer] = useState(0);
   
@@ -87,7 +103,7 @@ function DriverDashboard() {
         setLocationHistory(prev => [...prev.slice(-50), newLoc]);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Driver loadData error:', err);
     }
   }, []);
 
@@ -116,7 +132,7 @@ function DriverDashboard() {
           setLocationHistory(prev => [...prev.slice(-50), newLoc]);
         }
       } catch (err) {
-        console.error(err);
+        console.error('Driver init error:', err);
       }
     };
 
@@ -148,8 +164,8 @@ function DriverDashboard() {
 
   useEffect(() => {
     gsap.fromTo(contentRef.current,
-      { opacity: 0 },
-      { opacity: 1, duration: 0.4, ease: 'power2.out' }
+      { opacity: 0, y: 15 },
+      { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' }
     );
   }, []);
 
@@ -220,6 +236,7 @@ function DriverDashboard() {
       toast.error('No bus assigned. Please contact school administration.');
       return;
     }
+    setIsStartingTrip(true);
     try {
       const pos = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -234,14 +251,16 @@ function DriverDashboard() {
       setGpsAccuracy(accuracy);
       setSosActive(false);
       connectSocket();
-      toast.success('Trip started! Live tracking active.');
+      toast.success('🚀 Trip started! Live GPS stream active.');
       loadData();
     } catch (err) {
       if (err.code === 1) {
-        toast.error('GPS permission denied. Please enable location access.');
+        toast.error('GPS permission denied. Please allow location access.');
       } else {
         toast.error(err.response?.data?.error || 'Failed to start trip');
       }
+    } finally {
+      setIsStartingTrip(false);
     }
   };
 
@@ -254,6 +273,7 @@ function DriverDashboard() {
       setLocationHistory([]);
       setTimer(0);
       setSosActive(false);
+      setShowEndTripConfirm(false);
       toast.success('Trip ended successfully');
       loadData();
     } catch (err) {
@@ -297,17 +317,17 @@ function DriverDashboard() {
       const res = await driverAPI.scanQR({ tripId: activeTrip.id, qrCode });
       setScanResult(res.data);
       setManualQRInput('');
-      toast.success(`${res.data.student_name} checked in!`);
+      toast.success(`✓ ${res.data.student_name} Checked In!`);
       loadData();
-      if (navigator.vibrate) navigator.vibrate(200);
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
       restartTimerRef.current = setTimeout(() => {
         setScanResult(null);
         setShowManualInput(false);
         isProcessingRef.current = false;
         setIsScanning(true);
-      }, 3000);
+      }, 2500);
     } catch (err) {
-      const errMsg = err.response?.data?.error || 'Scan failed';
+      const errMsg = err.response?.data?.error || 'Scan verification failed';
       setScanResult({ error: errMsg });
       toast.error(errMsg);
       restartTimerRef.current = setTimeout(() => {
@@ -330,7 +350,7 @@ function DriverDashboard() {
 
   const handleManualScan = async () => {
     if (!activeTrip || !manualQRInput.trim()) {
-      setScanResult({ error: 'Please enter the QR code' });
+      setScanResult({ error: 'Please enter the QR token' });
       return;
     }
     await performScan(manualQRInput.trim());
@@ -365,6 +385,7 @@ function DriverDashboard() {
 
   const handleNotifyDelay = async () => {
     if (!activeTrip) return;
+    setIsSendingDelay(true);
     try {
       await driverAPI.notifyDelay({ tripId: activeTrip.id, delayMinutes, reason: delayReason });
       setShowDelayModal(false);
@@ -373,13 +394,15 @@ function DriverDashboard() {
       toast.success('Delay notification sent to all parents');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to send notification');
+    } finally {
+      setIsSendingDelay(false);
     }
   };
 
   const handleLogout = () => setShowLogoutConfirm(true);
   const confirmLogout = () => {
     gsap.to(contentRef.current, {
-      opacity: 0, x: -50, duration: 0.25,
+      opacity: 0, x: -30, duration: 0.25,
       onComplete: () => { clearAuth(); navigate('/login'); }
     });
   };
@@ -396,191 +419,386 @@ function DriverDashboard() {
   const nextStopOrder = tripDetails?.next_stop_order ?? 1;
 
   return (
-    <div className="driver-dashboard">
-      <nav>
-        <div className="nav-section nav-left"></div>
-        <div className="nav-section nav-center">
-          <h2>Driver Dashboard</h2>
+    <div className="driver-dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
+      {/* Top Header Bar */}
+      <nav
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          background: 'rgba(255, 255, 255, 0.95)',
+          backdropFilter: 'blur(8px)',
+          borderBottom: '1px solid #e2e8f0',
+          padding: '12px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+            <Navigation size={20} color="#38bdf8" />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 800, margin: 0, color: '#0f172a' }}>Driver Console</h3>
+              {activeTrip && <StatusBadge status="LIVE" size="sm" />}
+            </div>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>
+              {busInfo.bus_number ? `Assigned: Bus ${busInfo.bus_number}` : 'Fleet Operations'}
+            </span>
+          </div>
         </div>
-        <div className="nav-section nav-right">
-          <button onClick={handleLogout} className="logout-btn">
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button onClick={handleLogout} className="btn btn-outline btn-sm" style={{ borderRadius: '10px', color: '#64748b' }}>
             <LogOut size={16} /> Logout
           </button>
         </div>
       </nav>
 
-      <div className="content" ref={contentRef} style={{ maxWidth: 850, margin: '0 auto', paddingBottom: 40 }}>
-        {/* Active SOS Warning Banner */}
+      <div className="content" ref={contentRef} style={{ maxWidth: '680px', margin: '0 auto', padding: '18px 16px 40px' }}>
+        {/* Active Emergency SOS Banner */}
         {sosActive && (
-          <div style={{
-            background: '#fef2f2',
-            border: '2px solid #ef4444',
-            borderRadius: 12,
-            padding: '16px 20px',
-            marginBottom: 20,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            animation: 'pulse 2s infinite'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <ShieldAlert size={28} color="#ef4444" />
+          <div
+            style={{
+              background: '#fef2f2',
+              border: '2px solid #ef4444',
+              borderRadius: '16px',
+              padding: '16px 20px',
+              marginBottom: '18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              animation: 'pulseLive 2s infinite',
+              boxShadow: '0 8px 24px rgba(239, 68, 68, 0.18)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <ShieldAlert size={32} color="#ef4444" />
               <div>
-                <strong style={{ color: '#b91c1c', fontSize: 16 }}>EMERGENCY SOS BROADCAST ACTIVE</strong>
-                <p style={{ margin: 0, fontSize: 13, color: '#7f1d1d' }}>
-                  School dispatch and parents have been notified. Stay calm and ensure student safety.
+                <strong style={{ color: '#b91c1c', fontSize: '15px' }}>EMERGENCY SOS ACTIVE</strong>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#7f1d1d' }}>
+                  School dispatch and parents have been alerted. Stand by for instructions.
                 </p>
               </div>
             </div>
-            <span className="badge badge-danger" style={{ animation: 'bounce 1s infinite' }}>CRITICAL ALERT</span>
+            <StatusBadge status="EMERGENCY" text="SOS ALERT" size="sm" />
           </div>
         )}
 
         {!busInfo.bus_number ? (
-          <div className="no-assignment-card">
-            <AlertTriangle size={36} />
-            <h4>No Assignment Yet</h4>
-            <p>You have not been assigned a bus or route. Please contact your school administrator.</p>
-          </div>
+          <EmptyState
+            title="No Bus Assigned"
+            description="You have not been assigned to an active school bus or route. Please contact your school administrator to configure your bus profile."
+            icon={AlertTriangle}
+          />
         ) : (
           <>
-            {/* Bus Info & Telemetry Header */}
-            <div className="bus-info-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-              <div className="info-item"><label>Bus Number</label><span>{busInfo.bus_number}</span></div>
-              <div className="info-item"><label>License Plate</label><span>{busInfo.license_plate || '—'}</span></div>
-              <div className="info-item"><label>Route</label><span>{busInfo.route_name || busInfo.route_id?.name || '—'}</span></div>
-              <div className="info-item">
-                <label>GPS Signal</label>
-                <span>
+            {/* Bus Info Header Card */}
+            <div
+              style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '16px',
+                padding: '18px 20px',
+                marginBottom: '16px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Vehicle Assignment
+                  </div>
+                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                    <span>🚌 {busInfo.bus_number}</span>
+                    {busInfo.license_plate && (
+                      <span style={{ fontSize: '12px', background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '6px', fontWeight: 600 }}>
+                        {busInfo.license_plate}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
                   {gpsAccuracy == null ? (
-                    <span style={{ color: 'var(--gray-400)' }}>Standby</span>
+                    <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>GPS Standby</span>
                   ) : gpsAccuracy <= 15 ? (
-                    <span style={{ color: '#16a34a', fontWeight: 600 }}>🟢 High (±{Math.round(gpsAccuracy)}m)</span>
+                    <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 700, background: '#dcfce7', padding: '4px 8px', borderRadius: '6px' }}>
+                      🟢 GPS High (±{Math.round(gpsAccuracy)}m)
+                    </span>
                   ) : gpsAccuracy <= 50 ? (
-                    <span style={{ color: '#ca8a04', fontWeight: 600 }}>🟡 Med (±{Math.round(gpsAccuracy)}m)</span>
+                    <span style={{ fontSize: '12px', color: '#ca8a04', fontWeight: 700, background: '#fef9c3', padding: '4px 8px', borderRadius: '6px' }}>
+                      🟡 GPS Med (±{Math.round(gpsAccuracy)}m)
+                    </span>
                   ) : (
-                    <span style={{ color: '#dc2626', fontWeight: 600 }}>🔴 Weak (±{Math.round(gpsAccuracy)}m)</span>
+                    <span style={{ fontSize: '12px', color: '#dc2626', fontWeight: 700, background: '#fee2e2', padding: '4px 8px', borderRadius: '6px' }}>
+                      🔴 GPS Weak (±{Math.round(gpsAccuracy)}m)
+                    </span>
                   )}
-                </span>
+                </div>
+              </div>
+
+              <div style={{ fontSize: '13px', color: '#475569', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+                Route: <strong style={{ color: '#0f172a' }}>{busInfo.route_name || busInfo.route_id?.name || 'Standard Route'}</strong>
               </div>
             </div>
 
-            {/* Real-Time Telemetry Bar when Trip is Active */}
+            {/* Active Telemetry Cockpit */}
             {activeTrip && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                gap: 12,
-                marginTop: 12,
-                marginBottom: 16
-              }}>
-                <div style={{ background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Gauge size={20} color="#6366f1" />
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', fontWeight: 600 }}>Speed</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-900)' }}>{currentSpeed} <span style={{ fontSize: 12, fontWeight: 400 }}>km/h</span></div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}
+              >
+                {/* Speed Card */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                    borderRadius: '16px',
+                    padding: '16px',
+                    color: '#ffffff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', fontWeight: 700 }}>Current Speed</span>
+                    <Gauge size={18} color="#38bdf8" />
+                  </div>
+                  <div style={{ fontSize: '32px', fontWeight: 900, color: '#ffffff', margin: '8px 0 0', letterSpacing: '-0.03em' }}>
+                    {currentSpeed} <span style={{ fontSize: '14px', color: '#94a3b8', fontWeight: 500 }}>km/h</span>
                   </div>
                 </div>
 
-                <div style={{ background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Compass size={20} color="#0ea5e9" />
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', fontWeight: 600 }}>Heading</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-900)' }}>{getHeadingDirection(currentHeading)} <span style={{ fontSize: 12, fontWeight: 400 }}>({currentHeading}°)</span></div>
+                {/* Duration Card */}
+                <div
+                  style={{
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '16px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 700 }}>Trip Timer</span>
+                    <Radio size={18} color="#f59e0b" />
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', margin: '8px 0 0', fontFamily: 'monospace' }}>
+                    {formatTime(timer)}
                   </div>
                 </div>
 
-                <div style={{ background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Users size={20} color="#10b981" />
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', fontWeight: 600 }}>On Board</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-900)' }}>{checkinCount} <span style={{ fontSize: 12, fontWeight: 400 }}>passengers</span></div>
+                {/* Heading Card */}
+                <div
+                  style={{
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '16px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 700 }}>Bearing</span>
+                    <Compass size={18} color="#0ea5e9" />
+                  </div>
+                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', margin: '8px 0 0' }}>
+                    {getHeadingDirection(currentHeading)} <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>({currentHeading}°)</span>
                   </div>
                 </div>
 
-                <div style={{ background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Radio size={20} color="#f59e0b" />
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--gray-500)', textTransform: 'uppercase', fontWeight: 600 }}>Trip Duration</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-900)' }}>{formatTime(timer)}</div>
+                {/* Passengers Card */}
+                <div
+                  style={{
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '16px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 700 }}>On Board</span>
+                    <Users size={18} color="#10b981" />
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: '#16a34a', margin: '8px 0 0' }}>
+                    {checkinCount} <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 500 }}>students</span>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Trip Controls Card */}
-            <div className="trip-controls-card" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+            {/* Trip Action Controls (Cockpit Buttons) */}
+            <div style={{ marginBottom: '18px' }}>
               {!activeTrip ? (
-                <button className="btn btn-success btn-lg" onClick={handleStartTrip} style={{ width: '100%', padding: '14px 20px' }}>
-                  <Play size={20} /> Start Live Trip
+                <button
+                  className="btn btn-primary btn-lg"
+                  onClick={handleStartTrip}
+                  disabled={isStartingTrip}
+                  style={{
+                    width: '100%',
+                    padding: '18px 24px',
+                    fontSize: '17px',
+                    fontWeight: 800,
+                    borderRadius: '16px',
+                    boxShadow: '0 8px 20px rgba(37, 99, 235, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
+                  }}
+                >
+                  <Play size={22} />
+                  {isStartingTrip ? 'Acquiring GPS & Starting...' : 'START LIVE TRIP'}
                 </button>
               ) : (
-                <>
-                  <button className="btn btn-primary" onClick={handleStartScanner} style={{ flex: 1, minWidth: 120 }}>
-                    <QrCode size={16} /> Scan QR Pass
-                  </button>
-                  <button className="btn btn-warning" onClick={() => setShowDelayModal(true)}>
-                    <Clock size={16} /> Delay
-                  </button>
-                  <button 
-                    className="btn" 
-                    onClick={() => setShowSOSModal(true)} 
-                    style={{ background: '#dc2626', color: '#fff', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleStartScanner}
+                    style={{
+                      padding: '16px',
+                      borderRadius: '14px',
+                      fontWeight: 700,
+                      fontSize: '15px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
                   >
-                    <AlertOctagon size={16} /> SOS Emergency
+                    <QrCode size={18} /> Scan QR Pass
                   </button>
-                  <button className="btn btn-danger" onClick={handleEndTrip}>
-                    <Square size={16} /> End Trip
+
+                  <button
+                    className="btn btn-warning"
+                    onClick={() => setShowDelayModal(true)}
+                    style={{
+                      padding: '16px',
+                      borderRadius: '14px',
+                      fontWeight: 700,
+                      fontSize: '15px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <Clock size={18} /> Report Delay
                   </button>
-                </>
+
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => setShowSOSModal(true)}
+                    style={{
+                      padding: '16px',
+                      borderRadius: '14px',
+                      fontWeight: 700,
+                      fontSize: '15px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      background: '#ef4444',
+                      color: '#ffffff'
+                    }}
+                  >
+                    <AlertOctagon size={18} /> SOS Emergency
+                  </button>
+
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => setShowEndTripConfirm(true)}
+                    style={{
+                      padding: '16px',
+                      borderRadius: '14px',
+                      fontWeight: 700,
+                      fontSize: '15px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      color: '#475569',
+                      border: '1px solid #cbd5e1'
+                    }}
+                  >
+                    <Square size={18} /> End Trip
+                  </button>
+                </div>
               )}
             </div>
 
             {/* Route Stop Progression Card */}
             {activeTrip && routeStops.length > 0 && (
-              <div style={{ background: '#fff', border: '1px solid var(--gray-200)', borderRadius: 12, padding: 18, marginBottom: 16 }}>
-                <h4 style={{ margin: '0 0 12px 0', fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <MapPin size={16} color="#6366f1" /> Route Stop Progression
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '16px',
+                  padding: '18px 20px',
+                  marginBottom: '16px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                }}
+              >
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <MapPin size={16} color="#2563eb" /> Route Progression
                 </h4>
-                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6 }}>
+
+                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '6px' }}>
                   {routeStops.map((stop, idx) => {
                     const stopOrder = stop.order ?? (idx + 1);
                     const isPassed = stopOrder < nextStopOrder;
                     const isCurrent = stopOrder === nextStopOrder;
+
                     return (
-                      <div 
+                      <div
                         key={idx}
                         style={{
                           flex: '0 0 auto',
-                          padding: '8px 12px',
-                          borderRadius: 8,
+                          padding: '10px 14px',
+                          borderRadius: '10px',
                           background: isCurrent ? '#eff6ff' : isPassed ? '#f8fafc' : '#ffffff',
                           border: `1.5px solid ${isCurrent ? '#2563eb' : isPassed ? '#cbd5e1' : '#e2e8f0'}`,
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 6
+                          gap: '8px'
                         }}
                       >
                         {isPassed ? (
-                          <CheckCircle2 size={14} color="#10b981" />
+                          <CheckCircle2 size={16} color="#16a34a" />
                         ) : (
-                          <span style={{ 
-                            width: 18, 
-                            height: 18, 
-                            borderRadius: '50%', 
-                            background: isCurrent ? '#2563eb' : '#94a3b8', 
-                            color: '#fff', 
-                            fontSize: 11, 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            fontWeight: 700
-                          }}>
+                          <span
+                            style={{
+                              width: '20px',
+                              height: '20px',
+                              borderRadius: '50%',
+                              background: isCurrent ? '#2563eb' : '#94a3b8',
+                              color: '#fff',
+                              fontSize: '11px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 800
+                            }}
+                          >
                             {stopOrder}
                           </span>
                         )}
-                        <span style={{ fontSize: 13, fontWeight: isCurrent ? 700 : 500, color: isCurrent ? '#1e40af' : isPassed ? '#64748b' : '#334155' }}>
+                        <span style={{ fontSize: '13px', fontWeight: isCurrent ? 800 : 500, color: isCurrent ? '#1e40af' : isPassed ? '#64748b' : '#334155' }}>
                           {stop.name}
                         </span>
                         {idx < routeStops.length - 1 && <ChevronRight size={14} color="#94a3b8" />}
@@ -591,15 +809,27 @@ function DriverDashboard() {
               </div>
             )}
 
-            {!activeTrip && (
-              <div style={{ background: 'var(--gray-50)', borderRadius: 'var(--radius)', padding: 24, textAlign: 'center', color: 'var(--gray-400)', fontSize: 14, marginBottom: 16 }}>
-                Start a trip to begin broadcasting GPS coordinates to school administration and parents.
-              </div>
-            )}
-
             {/* QR Scanner Modal / View */}
             {showQRScanner && activeTrip && (
-              <div className="qr-scanner-card" style={{ marginBottom: 16 }}>
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '16px',
+                  padding: '20px',
+                  marginBottom: '16px',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Camera size={18} color="#2563eb" /> Student QR Scanner
+                  </h3>
+                  <button onClick={handleStopScanner} className="btn btn-outline btn-sm" style={{ padding: '6px 10px' }}>
+                    <X size={16} />
+                  </button>
+                </div>
+
                 {isScanning && !scanResult && (
                   <QRScanner
                     onScan={handleCameraScan}
@@ -609,53 +839,76 @@ function DriverDashboard() {
                 )}
 
                 {!isScanning && !scanResult && (
-                  <div className="qr-scanner-start">
-                    <Camera size={36} />
-                    <h4>Camera Scanner</h4>
-                    <p>Point camera at student QR boarding pass on parent phone.</p>
-                    <button className="btn btn-primary btn-lg" onClick={() => setIsScanning(true)}>
-                      <Camera size={18} /> Start Camera
-                    </button>
-                    <button className="btn btn-outline btn-sm" onClick={() => setShowManualInput(!showManualInput)} style={{ marginTop: 8 }}>
-                      {showManualInput ? 'Hide' : 'Type QR Code Manually'}
-                    </button>
+                  <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+                    <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                      <Camera size={30} />
+                    </div>
+                    <h4 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 6px' }}>Ready to Scan</h4>
+                    <p style={{ color: '#64748b', fontSize: '13px', maxWidth: '320px', margin: '0 auto 16px' }}>
+                      Point your phone camera at the student's dynamic boarding pass QR.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxWidth: '280px', margin: '0 auto' }}>
+                      <button className="btn btn-primary" onClick={() => setIsScanning(true)}>
+                        <Camera size={18} /> Launch Camera
+                      </button>
+                      <button className="btn btn-outline btn-sm" onClick={() => setShowManualInput(!showManualInput)}>
+                        {showManualInput ? 'Hide Manual Token' : 'Type Token Manually'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
                 {showManualInput && (
-                  <div className="qr-input-row" style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
                     <input
                       type="text"
-                      placeholder="Paste or type QR code token..."
+                      className="form-control"
+                      placeholder="Paste or type QR token..."
                       value={manualQRInput}
                       onChange={(e) => { setManualQRInput(e.target.value); setScanResult(null); }}
                     />
-                    <button onClick={handleManualScan} className="btn btn-primary">Verify</button>
+                    <button onClick={handleManualScan} className="btn btn-primary" style={{ flexShrink: 0 }}>
+                      Verify
+                    </button>
                   </div>
                 )}
 
                 {scanResult && (
-                  <div className="qr-scanner-result">
-                    <div className={`scan-result-banner ${scanResult.error ? 'error' : 'success'}`}>
+                  <div style={{ marginTop: '14px' }}>
+                    <div
+                      style={{
+                        padding: '16px',
+                        borderRadius: '12px',
+                        background: scanResult.error ? '#fef2f2' : '#f0fdf4',
+                        border: `1.5px solid ${scanResult.error ? '#ef4444' : '#22c55e'}`,
+                        color: scanResult.error ? '#b91c1c' : '#15803d',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px'
+                      }}
+                    >
                       {scanResult.error ? (
-                        <><X size={18} /><span>{scanResult.error}</span></>
+                        <>
+                          <X size={24} />
+                          <span style={{ fontWeight: 600, fontSize: '14px' }}>{scanResult.error}</span>
+                        </>
                       ) : (
-                        <><UserCheck size={18} /><div><strong>{scanResult.student_name}</strong><span className="scan-pickup">{scanResult.pickup_location}</span></div></>
+                        <>
+                          <UserCheck size={28} />
+                          <div>
+                            <strong style={{ fontSize: '16px' }}>{scanResult.student_name}</strong>
+                            <div style={{ fontSize: '12px', marginTop: '2px', opacity: 0.9 }}>
+                              Stop: {scanResult.pickup_location || 'Standard Stop'}
+                            </div>
+                          </div>
+                        </>
                       )}
                     </div>
                     {!scanResult.error && (
-                      <div className="scan-auto-restart">
-                        <RotateCcw size={14} /> Ready for next student scan...
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
+                        <RotateCcw size={14} /> Ready for next student in 2s...
                       </div>
                     )}
-                  </div>
-                )}
-
-                {!isScanning && !scanResult && !showManualInput && (
-                  <div className="qr-scanner-close-row">
-                    <button className="btn btn-danger btn-sm" onClick={handleStopScanner}>
-                      <X size={16} /> Close Scanner
-                    </button>
                   </div>
                 )}
               </div>
@@ -663,57 +916,113 @@ function DriverDashboard() {
 
             {/* Boarded Students List */}
             {activeTrip && checkinCount > 0 && (
-              <div className="checkins-card" style={{ marginBottom: 16 }}>
-                <h3 style={{ fontSize: 16, marginBottom: 12 }}><Users size={18} /> Students On Board ({checkinCount})</h3>
-                {tripDetails.check_ins.map((checkIn, index) => (
-                  <div key={index} className="checkin-item">
-                    <div className="checkin-avatar">
-                      {checkIn.student_name?.charAt(0)?.toUpperCase() || '?'}
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '16px',
+                  padding: '18px 20px',
+                  marginBottom: '16px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                }}
+              >
+                <h3 style={{ fontSize: '15px', fontWeight: 800, margin: '0 0 14px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Users size={18} color="#2563eb" /> Students On Board ({checkinCount})
+                </h3>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {tripDetails.check_ins.map((checkIn, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 12px',
+                        background: '#f8fafc',
+                        borderRadius: '10px',
+                        border: '1px solid #f1f5f9'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div
+                          style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '8px',
+                            background: '#eff6ff',
+                            color: '#2563eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 800,
+                            fontSize: '13px'
+                          }}
+                        >
+                          {checkIn.student_name?.charAt(0)?.toUpperCase() || '?'}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{checkIn.student_name}</div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>{checkIn.pickup_location || 'Designated Stop'}</div>
+                        </div>
+                      </div>
+
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', background: '#e2e8f0', padding: '2px 8px', borderRadius: '6px' }}>
+                        {new Date(checkIn.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
-                    <div className="checkin-info">
-                      <div className="checkin-name">{checkIn.student_name}</div>
-                      <div className="checkin-location">{checkIn.pickup_location}</div>
-                    </div>
-                    <span className="checkin-time">
-                      {new Date(checkIn.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
 
             {/* Live Driver Map View */}
             {isLoaded && (
-              <div className="map-wrapper" style={{ marginTop: 10, background: '#fff', padding: 12, borderRadius: 14, border: '1px solid var(--gray-200)' }}>
-                <div className="map-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <h3 style={{ margin: 0, fontSize: 15, display: 'flex', alignItems: 'center', gap: 6 }}><MapPin size={16} /> Live GPS Stream</h3>
-                  {activeTrip && <span className="badge badge-success">Broadcasting Live</span>}
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '16px',
+                  padding: '16px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                  marginBottom: '16px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <MapPin size={16} color="#2563eb" /> Live Route Map
+                  </h3>
+                  {activeTrip && <StatusBadge status="LIVE" size="sm" />}
                 </div>
-                <GoogleMap
-                  mapContainerStyle={mapContainerStyle}
-                  center={currentLocation || defaultCenter}
-                  zoom={15}
-                  options={mapOptions}
-                >
-                  {currentLocation && (
-                    <Marker 
-                      position={currentLocation} 
-                      label={{ text: '🚌', fontSize: '18px' }} 
-                    />
-                  )}
-                  {locationHistory.length > 1 && (
-                    <Polyline
-                      path={locationHistory}
-                      options={{ strokeColor: '#2563eb', strokeOpacity: 0.8, strokeWeight: 4 }}
-                    />
-                  )}
-                </GoogleMap>
+
+                <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                  <GoogleMap
+                    mapContainerStyle={mapContainerStyle}
+                    center={currentLocation || defaultCenter}
+                    zoom={15}
+                    options={mapOptions}
+                  >
+                    {currentLocation && (
+                      <Marker 
+                        position={currentLocation} 
+                        label={{ text: '🚌', fontSize: '18px' }} 
+                      />
+                    )}
+                    {locationHistory.length > 1 && (
+                      <Polyline
+                        path={locationHistory}
+                        options={{ strokeColor: '#2563eb', strokeOpacity: 0.8, strokeWeight: 4 }}
+                      />
+                    )}
+                  </GoogleMap>
+                </div>
+
                 {currentLocation && (
-                  <div className="map-coords" style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 12, color: 'var(--gray-500)' }}>
-                    <span>Lat: {currentLocation.lat.toFixed(6)}</span>
-                    <span>Lng: {currentLocation.lng.toFixed(6)}</span>
-                    <span>Speed: {currentSpeed} km/h</span>
-                    <span>Heading: {currentHeading}°</span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '10px', fontSize: '12px', color: '#64748b' }}>
+                    <span>Lat: <strong>{currentLocation.lat.toFixed(5)}</strong></span>
+                    <span>Lng: <strong>{currentLocation.lng.toFixed(5)}</strong></span>
+                    <span>Speed: <strong>{currentSpeed} km/h</strong></span>
+                    <span>Heading: <strong>{currentHeading}°</strong></span>
                   </div>
                 )}
               </div>
@@ -728,69 +1037,53 @@ function DriverDashboard() {
           <div className="confirm-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440, borderTop: '4px solid #ef4444' }}>
             <div className="confirm-modal-header" style={{ textAlign: 'center' }}>
               <div className="confirm-icon danger" style={{ margin: '0 auto 12px' }}><AlertOctagon size={32} /></div>
-              <h3 style={{ color: '#b91c1c', margin: '0 0 6px 0' }}>Trigger Emergency SOS</h3>
-              <p style={{ color: '#4b5563', fontSize: 13 }}>
-                This will instantly alert school administrators and broadcast an emergency alert to all connected parents.
+              <h3 style={{ color: '#b91c1c', margin: '0 0 6px 0', fontSize: '18px', fontWeight: 800 }}>Broadcast Emergency SOS</h3>
+              <p style={{ color: '#4b5563', fontSize: '13px' }}>
+                This will immediately broadcast an urgent emergency alert to school dispatchers and parents.
               </p>
             </div>
 
             <div style={{ margin: '16px 0' }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: '#374151' }}>
-                Select Emergency Reason
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#374151' }}>
+                Emergency Classification
               </label>
               <select 
                 value={sosReason} 
                 onChange={e => setSosReason(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, marginBottom: 10 }}
+                className="form-control"
+                style={{ marginBottom: '10px' }}
               >
-                <option value="Breakdown">Vehicle Breakdown / Engine Stall</option>
-                <option value="Accident">Traffic / Road Collision</option>
-                <option value="Medical">Medical Emergency On Board</option>
-                <option value="Security">Security / Safety Danger</option>
-                <option value="Weather / Road Block">Severe Weather / Road Blocked</option>
-                <option value="Other">Other Reason...</option>
+                <option value="Breakdown">Vehicle Breakdown / Mechanical Failure</option>
+                <option value="Accident">Traffic / Collision Incident</option>
+                <option value="Medical">Medical Emergency on Board</option>
+                <option value="Security">Security or Safety Hazard</option>
+                <option value="Weather / Road Block">Severe Weather / Impassable Road</option>
+                <option value="Other">Other Emergency...</option>
               </select>
 
               {sosReason === 'Other' && (
                 <input
                   type="text"
+                  className="form-control"
                   placeholder="Describe emergency details..."
                   value={customSosText}
                   onChange={e => setCustomSosText(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }}
                 />
               )}
             </div>
 
-            <div className="confirm-modal-actions" style={{ display: 'flex', gap: 10 }}>
-              <button className="cancel-btn" onClick={() => setShowSOSModal(false)} disabled={isSendingSOS}>
+            <div className="confirm-modal-actions" style={{ display: 'flex', gap: '10px' }}>
+              <button className="btn btn-outline" onClick={() => setShowSOSModal(false)} disabled={isSendingSOS} style={{ flex: 1 }}>
                 Cancel
               </button>
               <button 
-                className="confirm-btn" 
+                className="btn btn-danger" 
                 onClick={handleTriggerSOS} 
                 disabled={isSendingSOS}
-                style={{ background: '#dc2626', color: '#fff' }}
+                style={{ flex: 1.5, background: '#dc2626', color: '#fff', fontWeight: 800 }}
               >
-                {isSendingSOS ? 'Broadcasting...' : '🚨 Confirm SOS Broadcast'}
+                {isSendingSOS ? 'Broadcasting...' : '🚨 Broadcast SOS'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Logout Modal */}
-      {showLogoutConfirm && (
-        <div className="modal-overlay" onClick={() => setShowLogoutConfirm(false)}>
-          <div className="confirm-modal" onClick={e => e.stopPropagation()}>
-            <div className="confirm-modal-header">
-              <div className="confirm-icon danger"><AlertTriangle size={24} /></div>
-              <h3>Confirm Logout</h3>
-              <p>Are you sure you want to logout?</p>
-            </div>
-            <div className="confirm-modal-actions">
-              <button className="cancel-btn" onClick={() => setShowLogoutConfirm(false)}>Cancel</button>
-              <button className="confirm-btn" onClick={confirmLogout}>Logout</button>
             </div>
           </div>
         </div>
@@ -799,30 +1092,81 @@ function DriverDashboard() {
       {/* Delay Notification Modal */}
       {showDelayModal && (
         <div className="modal-overlay" onClick={() => setShowDelayModal(false)}>
-          <div className="delay-modal" onClick={e => e.stopPropagation()}>
-            <div className="delay-modal-header">
-              <h3><Clock size={18} /> Notify Delay</h3>
-              <button onClick={() => setShowDelayModal(false)}><X size={18} /></button>
+          <div className="confirm-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="confirm-modal-header">
+              <div className="confirm-icon warning" style={{ margin: '0 auto 12px' }}><Clock size={28} /></div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: 800 }}>Notify Route Delay</h3>
+              <p style={{ color: '#4b5563', fontSize: '13px' }}>
+                Inform waiting parents of estimated delay in schedule.
+              </p>
             </div>
-            <div className="delay-modal-body">
-              <div className="form-group">
-                <label>Delay (minutes)</label>
-                <input type="number" value={delayMinutes} onChange={e => setDelayMinutes(Number(e.target.value))} min={5} max={120} />
+
+            <div style={{ margin: '16px 0' }}>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 700 }}>Estimated Delay (minutes)</label>
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  value={delayMinutes} 
+                  onChange={e => setDelayMinutes(Number(e.target.value))} 
+                  min={5} 
+                  max={120} 
+                />
               </div>
               <div className="form-group">
-                <label>Reason (optional)</label>
-                <textarea value={delayReason} onChange={e => setDelayReason(e.target.value)} placeholder="e.g. Traffic, road construction, weather..." />
+                <label style={{ fontSize: '12px', fontWeight: 700 }}>Reason (optional)</label>
+                <textarea 
+                  className="form-control" 
+                  rows={3} 
+                  value={delayReason} 
+                  onChange={e => setDelayReason(e.target.value)} 
+                  placeholder="e.g. Heavy traffic bottleneck, road construction..." 
+                />
               </div>
-              <button onClick={handleNotifyDelay} className="btn btn-warning" style={{ width: '100%' }}>
-                Send Notification to Parents
+            </div>
+
+            <div className="confirm-modal-actions" style={{ display: 'flex', gap: '10px' }}>
+              <button className="btn btn-outline" onClick={() => setShowDelayModal(false)} disabled={isSendingDelay} style={{ flex: 1 }}>
+                Cancel
+              </button>
+              <button 
+                className="btn btn-warning" 
+                onClick={handleNotifyDelay} 
+                disabled={isSendingDelay} 
+                style={{ flex: 1.5, fontWeight: 800 }}
+              >
+                {isSendingDelay ? 'Sending...' : 'Send Delay Alert'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* End Trip Modal */}
+      <ConfirmModal
+        isOpen={showEndTripConfirm}
+        title="Conclude Active Trip?"
+        message="Are you sure you want to end this trip? Real-time location broadcasting will stop."
+        confirmText="Conclude Trip"
+        cancelText="Keep Trip Active"
+        type="danger"
+        onConfirm={handleEndTrip}
+        onCancel={() => setShowEndTripConfirm(false)}
+      />
+
+      {/* Logout Modal */}
+      <ConfirmModal
+        isOpen={showLogoutConfirm}
+        title="Confirm Sign Out"
+        message="Are you sure you want to log out of your driver account?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        type="danger"
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </div>
   );
 }
 
 export default DriverDashboard;
-

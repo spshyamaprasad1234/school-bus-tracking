@@ -57,6 +57,8 @@ export function getSocket() {
 
 export function disconnectSocket() {
   activeTripId = null;
+  activeSchoolId = null;
+  activeSchoolId = null;
   if (socket) {
     socket.disconnect();
     socket = null;
@@ -71,6 +73,8 @@ export function joinTripRoom(tripId) {
 }
 
 let activeSchoolId = null;
+
+export function getActiveSchoolId() { return activeSchoolId; }
 
 export function joinSchoolFleet(schoolId) {
   activeSchoolId = schoolId;
