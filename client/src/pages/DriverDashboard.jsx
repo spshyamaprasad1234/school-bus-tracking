@@ -401,10 +401,9 @@ function DriverDashboard() {
 
   const handleLogout = () => setShowLogoutConfirm(true);
   const confirmLogout = () => {
-    gsap.to(contentRef.current, {
-      opacity: 0, x: -30, duration: 0.25,
-      onComplete: () => { clearAuth(); navigate('/login'); }
-    });
+    setShowLogoutConfirm(false);
+    clearAuth();
+    navigate('/login');
   };
 
   const formatTime = (seconds) => {

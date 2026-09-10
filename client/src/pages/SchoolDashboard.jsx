@@ -51,8 +51,24 @@ const createFleetBusIcon = (heading = 0, isAlert = false, isActive = true) => {
 };
 
 function SchoolNav({ onLogout }) {
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const path = location.pathname;
+
+  const handleLogoutClick = () => {
+    if (onLogout) {
+      onLogout();
+    } else {
+      setShowLogoutConfirm(true);
+    }
+  };
+
+  const confirmLogout = () => {
+    clearAuth();
+    setShowLogoutConfirm(false);
+    navigate('/login');
+  };
 
   const navItems = [
     { to: '/school-dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
@@ -66,76 +82,90 @@ function SchoolNav({ onLogout }) {
   ];
 
   return (
-    <nav
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-        background: 'rgba(255, 255, 255, 0.96)',
-        backdropFilter: 'blur(10px)',
-        borderBottom: '1px solid #e2e8f0',
-        padding: '10px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.03)'
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
-        {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-            <School size={20} />
+    <>
+      <nav
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          background: 'rgba(255, 255, 255, 0.96)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: '1px solid #e2e8f0',
+          padding: '10px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.03)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
+          {/* Brand */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+              <School size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', lineHeight: 1.2 }}>School Fleet</div>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Administration Portal</div>
+            </div>
           </div>
-          <div>
-            <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', lineHeight: 1.2 }}>School Fleet</div>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>Administration Portal</div>
+
+          {/* Nav Links */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+            {navItems.map((item) => {
+              const isActive = item.exact 
+                ? (path === item.to || path === `${item.to}/`) 
+                : path.includes(item.to);
+              const Icon = item.icon;
+
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 12px',
+                    borderRadius: '10px',
+                    fontSize: '13px',
+                    fontWeight: isActive ? 700 : 600,
+                    color: isActive ? '#2563eb' : '#475569',
+                    background: isActive ? '#eff6ff' : 'transparent',
+                    transition: 'all 0.15s ease',
+                    textDecoration: 'none'
+                  }}
+                >
+                  {item.live && (
+                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+                  )}
+                  <Icon size={15} />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </div>
         </div>
 
-        {/* Nav Links */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-          {navItems.map((item) => {
-            const isActive = item.exact 
-              ? (path === item.to || path === `${item.to}/`) 
-              : path.includes(item.to);
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 12px',
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  fontWeight: isActive ? 700 : 600,
-                  color: isActive ? '#2563eb' : '#475569',
-                  background: isActive ? '#eff6ff' : 'transparent',
-                  transition: 'all 0.15s ease',
-                  textDecoration: 'none'
-                }}
-              >
-                {item.live && (
-                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
-                )}
-                <Icon size={15} />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
+        <div>
+          <button onClick={handleLogoutClick} className="btn btn-outline btn-sm" style={{ borderRadius: '10px', color: '#64748b' }}>
+            <LogOut size={15} /> Logout
+          </button>
         </div>
-      </div>
+      </nav>
 
-      <div>
-        <button onClick={onLogout} className="btn btn-outline btn-sm" style={{ borderRadius: '10px', color: '#64748b' }}>
-          <LogOut size={15} /> Logout
-        </button>
-      </div>
-    </nav>
+      {/* Standalone Logout Confirm Modal for School Admin */}
+      <ConfirmModal
+        isOpen={showLogoutConfirm}
+        title="Logout from School Admin"
+        message="Are you sure you want to end your administration session and log out?"
+        confirmLabel="Logout"
+        cancelLabel="Cancel"
+        type="danger"
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
+    </>
   );
 }
 
@@ -148,9 +178,8 @@ function Dashboard() {
   const [info, setInfo] = useState({});
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
-  const navigate = useNavigate();
+//   const navigate = useNavigate();
   const toast = useToast();
   const statsRef = useRef(null);
 
@@ -192,23 +221,10 @@ function Dashboard() {
     }
   };
 
-  const handleLogout = () => setShowLogoutConfirm(true);
-  const confirmLogout = () => { clearAuth(); navigate('/login'); };
 
   return (
     <div className="dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <SchoolNav onLogout={handleLogout} />
-
-      <ConfirmModal
-        isOpen={showLogoutConfirm}
-        title="Confirm Sign Out"
-        message="Are you sure you want to sign out of the school administration console?"
-        confirmText="Sign Out"
-        cancelText="Cancel"
-        type="danger"
-        onConfirm={confirmLogout}
-        onCancel={() => setShowLogoutConfirm(false)}
-      />
+      <SchoolNav />
 
       <div className="content" style={{ maxWidth: 1300, margin: '0 auto', padding: '24px 20px 60px' }}>
         {/* Welcome & School Code Header Banner */}
@@ -451,7 +467,7 @@ function Drivers() {
   const [search, setSearch] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+//   const navigate = useNavigate();
   const toast = useToast();
 
   const loadDrivers = useCallback(async () => {
@@ -526,7 +542,7 @@ function Drivers() {
 
   return (
     <div className="dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <SchoolNav onLogout={() => { clearAuth(); navigate('/login'); }} />
+      <SchoolNav  />
 
       <div className="content" style={{ maxWidth: 1300, margin: '0 auto', padding: '24px 20px 60px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
@@ -689,7 +705,7 @@ function Buses() {
   const [search, setSearch] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+//   const navigate = useNavigate();
   const toast = useToast();
 
   const loadData = useCallback(async () => {
@@ -774,7 +790,7 @@ function Buses() {
 
   return (
     <div className="dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <SchoolNav onLogout={() => { clearAuth(); navigate('/login'); }} />
+      <SchoolNav  />
 
       <div className="content" style={{ maxWidth: 1300, margin: '0 auto', padding: '24px 20px 60px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
@@ -946,7 +962,7 @@ function Routes_() {
   const [search, setSearch] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+//   const navigate = useNavigate();
   const toast = useToast();
 
   const { isLoaded: isMapsLoaded } = useJsApiLoader({
@@ -1092,7 +1108,7 @@ function Routes_() {
 
   return (
     <div className="dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <SchoolNav onLogout={() => { clearAuth(); navigate('/login'); }} />
+      <SchoolNav  />
 
       <div className="content" style={{ maxWidth: 1300, margin: '0 auto', padding: '24px 20px 60px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
@@ -1289,7 +1305,7 @@ function Students() {
   const [search, setSearch] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+//   const navigate = useNavigate();
   const toast = useToast();
 
   const loadData = useCallback(async () => {
@@ -1378,7 +1394,7 @@ function Students() {
 
   return (
     <div className="dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <SchoolNav onLogout={() => { clearAuth(); navigate('/login'); }} />
+      <SchoolNav  />
 
       <div className="content" style={{ maxWidth: 1300, margin: '0 auto', padding: '24px 20px 60px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
@@ -1546,7 +1562,7 @@ function LiveFleetView() {
   const [loading, setLoading] = useState(true);
   const [emergencies, setEmergencies] = useState(new Map());
 
-  const navigate = useNavigate();
+//   const navigate = useNavigate();
   const toast = useToast();
   const mapRef = useRef(null);
   const { isLoaded } = useJsApiLoader({
@@ -1742,7 +1758,7 @@ function LiveFleetView() {
 
   return (
     <div className="dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <SchoolNav onLogout={() => { clearAuth(); navigate('/login'); }} />
+      <SchoolNav  />
 
       <div className="content" style={{ maxWidth: 1400, margin: '0 auto', padding: '20px 24px 60px' }}>
         {loading && (
@@ -2090,7 +2106,7 @@ function TripHistoryView() {
   const [replayModalTrip, setReplayModalTrip] = useState(null);
   const [attendanceModalTrip, setAttendanceModalTrip] = useState(null);
 
-  const navigate = useNavigate();
+//   const navigate = useNavigate();
   const toast = useToast();
 
   const loadTrips = useCallback(async (page = 1) => {
@@ -2132,7 +2148,7 @@ function TripHistoryView() {
 
   return (
     <div className="dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <SchoolNav onLogout={() => { clearAuth(); navigate('/login'); }} />
+      <SchoolNav  />
 
       <div className="content" style={{ maxWidth: 1400, margin: '0 auto', padding: '20px 24px 60px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -2559,7 +2575,7 @@ function AttendanceModal({ trip, onClose }) {
 function FleetAnalyticsView() {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+//   const navigate = useNavigate();
 
   useEffect(() => {
     let isMounted = true;
@@ -2581,7 +2597,7 @@ function FleetAnalyticsView() {
 
   return (
     <div className="dashboard" style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <SchoolNav onLogout={() => { clearAuth(); navigate('/login'); }} />
+      <SchoolNav  />
 
       <div className="content" style={{ maxWidth: 1300, margin: '0 auto', padding: '24px 20px 60px' }}>
         {loading && (

@@ -302,10 +302,9 @@ function ParentDashboard() {
 
   const handleLogout = () => setShowLogoutConfirm(true);
   const confirmLogout = () => {
-    gsap.to(contentRef.current, {
-      opacity: 0, x: -50, duration: 0.25,
-      onComplete: () => { clearAuth(); navigate('/login'); }
-    });
+    setShowLogoutConfirm(false);
+    clearAuth();
+    navigate('/login');
   };
 
   const getNotifIcon = (type) => {

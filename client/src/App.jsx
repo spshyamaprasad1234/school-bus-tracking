@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, useRef, createContext, useContext, useCallback, useMemo, createPortal } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, useCallback, useMemo } from 'react';
 import gsap from 'gsap';
 import Login from './pages/Login';
 import SchoolSignup from './pages/SchoolSignup';
@@ -8,41 +8,10 @@ import SchoolDashboard from './pages/SchoolDashboard';
 import DriverDashboard from './pages/DriverDashboard';
 import ParentDashboard from './pages/ParentDashboard';
 
-const ModalContext = createContext();
-
-export function useModalPortal() {
-  return useContext(ModalContext);
-}
-
 const ToastContext = createContext();
 
 export function useToast() {
   return useContext(ToastContext);
-}
-
-function ModalPortalProvider({ children }) {
-  const portalRef = useRef(null);
-
-  useEffect(() => {
-    const el = document.createElement('div');
-    el.id = 'modal-portal';
-    document.body.appendChild(el);
-    portalRef.current = el;
-    return () => { if (el.parentNode) el.parentNode.removeChild(el); };
-  }, []);
-
-  const renderInPortal = useCallback((node) => {
-    if (portalRef.current) {
-      return createPortal(node, portalRef.current);
-    }
-    return node;
-  }, []);
-
-  return (
-    <ModalContext.Provider value={renderInPortal}>
-      {children}
-    </ModalContext.Provider>
-  );
 }
 
 function ToastProvider({ children }) {
@@ -72,7 +41,7 @@ function ToastProvider({ children }) {
       {children}
       <div className="toast-container">
         {toasts.map(t => (
-          <div key={t.id} className={`toast toast-${t.type} ${t.exiting ? 'toast-exit' : ''}`}>
+          <div key={t.id} className={'toast toast-' + t.type + (t.exiting ? ' toast-exit' : '')}>
             {t.type === 'success' && '✓'}
             {t.type === 'error' && '✕'}
             {t.type === 'info' && 'ℹ'}
@@ -149,11 +118,9 @@ function AnimatedRoutes() {
 function App() {
   return (
     <BrowserRouter>
-      <ModalPortalProvider>
-        <ToastProvider>
-          <AnimatedRoutes />
-        </ToastProvider>
-      </ModalPortalProvider>
+      <ToastProvider>
+        <AnimatedRoutes />
+      </ToastProvider>
     </BrowserRouter>
   );
 }

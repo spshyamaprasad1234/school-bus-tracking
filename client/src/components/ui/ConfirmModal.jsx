@@ -1,36 +1,46 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, AlertOctagon, Info, X } from 'lucide-react';
-import { useModalPortal } from '../../App';
 
 /**
  * ConfirmModal - Standardized modal dialog for delete, logout, or sensitive actions.
+ * Supports isOpen/open, confirmLabel/confirmText, cancelLabel/cancelText.
  */
 export default function ConfirmModal({
   isOpen,
+  open,
   title = 'Confirm Action',
   message = 'Are you sure you want to proceed?',
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel,
+  confirmText,
+  cancelLabel,
+  cancelText,
   type = 'danger', // 'danger' | 'warning' | 'info'
   isLoading = false,
   onConfirm,
   onCancel
 }) {
-  const renderInPortal = useModalPortal();
+  const isVisible = isOpen !== undefined ? Boolean(isOpen) : Boolean(open);
+  const resolvedConfirmLabel = confirmLabel || confirmText || 'Confirm';
+  const resolvedCancelLabel = cancelLabel || cancelText || 'Cancel';
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen && !isLoading) {
-        onCancel();
+      if (e.key === 'Escape' && isVisible && !isLoading) {
+        onCancel?.();
       }
     };
-    if (isOpen) {
+    if (isVisible) {
       window.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
     }
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isLoading, onCancel]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isVisible, isLoading, onCancel]);
 
-  if (!isOpen) return null;
+  if (!isVisible) return null;
 
   const typeConfig = {
     danger: {
@@ -67,12 +77,15 @@ export default function ConfirmModal({
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: 'rgba(15, 23, 42, 0.65)',
         backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 9999,
+        zIndex: 99999,
         padding: '16px',
         animation: 'fadeIn 0.15s ease-out'
       }}
@@ -83,13 +96,14 @@ export default function ConfirmModal({
         style={{
           background: '#ffffff',
           borderRadius: '16px',
-          maxWidth: '420px',
+          maxWidth: '440px',
           width: '100%',
-          padding: '24px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04)',
+          padding: '28px 24px 24px',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05)',
           border: '1px solid #e2e8f0',
           position: 'relative',
-          animation: 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+          animation: 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+          zIndex: 100000
         }}
       >
         <button
@@ -102,12 +116,16 @@ export default function ConfirmModal({
             border: 'none',
             color: '#94a3b8',
             cursor: 'pointer',
-            padding: '4px',
-            borderRadius: '6px',
+            padding: '6px',
+            borderRadius: '8px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            transition: 'color 0.15s'
           }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = '#0f172a')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
+          aria-label="Close modal"
         >
           <X size={18} />
         </button>
@@ -115,8 +133,8 @@ export default function ConfirmModal({
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
           <div
             style={{
-              width: '52px',
-              height: '52px',
+              width: '54px',
+              height: '54px',
               borderRadius: '50%',
               backgroundColor: typeConfig.bg,
               color: typeConfig.color,
@@ -126,15 +144,16 @@ export default function ConfirmModal({
               marginBottom: '16px'
             }}
           >
-            <Icon size={26} strokeWidth={2.2} />
+            <Icon size={28} strokeWidth={2.2} />
           </div>
 
           <h3
             style={{
               fontSize: '18px',
-              fontWeight: 700,
+              fontWeight: 800,
               color: '#0f172a',
-              margin: '0 0 8px 0'
+              margin: '0 0 8px 0',
+              lineHeight: 1.3
             }}
           >
             {title}
@@ -143,7 +162,7 @@ export default function ConfirmModal({
           <p
             style={{
               fontSize: '14px',
-              color: '#64748b',
+              color: '#475569',
               margin: '0 0 24px 0',
               lineHeight: 1.5
             }}
@@ -151,26 +170,35 @@ export default function ConfirmModal({
             {message}
           </p>
 
-          <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+          <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
             <button
               type="button"
               className="btn btn-outline"
               onClick={onCancel}
               disabled={isLoading}
-              style={{ flex: 1, padding: '10px', borderRadius: '10px', fontWeight: 600 }}
+              style={{
+                flex: 1,
+                padding: '11px 16px',
+                borderRadius: '10px',
+                fontWeight: 600,
+                fontSize: '14px',
+                border: '1px solid #cbd5e1',
+                color: '#334155'
+              }}
             >
-              {cancelLabel}
+              {resolvedCancelLabel}
             </button>
             <button
               type="button"
-              className={`btn ${typeConfig.confirmClass}`}
+              className={'btn ' + typeConfig.confirmClass}
               onClick={onConfirm}
               disabled={isLoading}
               style={{
                 flex: 1,
-                padding: '10px',
+                padding: '11px 16px',
                 borderRadius: '10px',
                 fontWeight: 600,
+                fontSize: '14px',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -183,7 +211,7 @@ export default function ConfirmModal({
                   Processing...
                 </>
               ) : (
-                confirmLabel
+                resolvedConfirmLabel
               )}
             </button>
           </div>
@@ -192,5 +220,8 @@ export default function ConfirmModal({
     </div>
   );
 
-  return renderInPortal ? renderInPortal(modalNode) : modalNode;
+  if (typeof document !== 'undefined') {
+    return createPortal(modalNode, document.body);
+  }
+  return modalNode;
 }
